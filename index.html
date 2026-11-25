@@ -327,7 +327,7 @@
     var r = ev && ev.reason; show(r && r.message ? r.message : String(r || ''));
   });
 })();
-window.YOMIAGE_VERSION = '3';
+window.YOMIAGE_VERSION = '4';
 window.YOMIAGE_LIB = {
   pdfWorker: './vendor/pdf.worker.min.js',
   tessWorker: './vendor/worker.min.js',
@@ -357,7 +357,6 @@ window.YOMIAGE_LIB = {
   var MIN_PART = 1500;
   var MAX_PART = 2000;
   var TARGET_PART = 1800;
-  var MAX_UTTER = 100;
   var TEXT_LAYER_MIN = 20;
   var STORE_PREFIX = 'yomiage-v1:';
 
@@ -491,64 +490,137 @@ window.YOMIAGE_LIB = {
   }
 
   /* ---------- text helpers ---------- */
-  function splitSentences(text) {
-    var cleaned = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
-    if (!cleaned) return [];
-    var chars = Array.from(cleaned);
-    var enders = /[。！？!?．]/;
-    var closers = /[」』）\)】］\]]/;
-    var chunks = [];
+  var LONG_SENTENCE = 250;   // only sentences longer than this are split (at the 、 nearest the middle)
+  var SHORT_SENTENCE = 15;   // shorter sentences are joined with the next one in the same paragraph
+  var OPENERS = '「『（(【［〈《“‘';
+  var CLOSERS = '」』）)】］〉》”’';
+  var ENDERS = '。！？!?．';
+
+  // Join line-wrap breaks (single newlines inside a paragraph) so wrapped lines are not read as separate pieces.
+  function joinWrappedLines(text) {
+    var lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+    var paras = [];
+    var cur = '';
+    function flush() { if (cur.replace(/\s+/g, '')) paras.push(cur.replace(/^\s+|\s+$/g, '')); cur = ''; }
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].replace(/^[ \t\u3000]+|[ \t\u3000]+$/g, '');
+      if (!line) { flush(); continue; }
+      if (!cur) { cur = line; continue; }
+      var prev = cur;
+      var lastCh = Array.from(prev).slice(-1)[0] || '';
+      var prevLine = Array.from(lines[i - 1].replace(/^[ \t\u3000]+|[ \t\u3000]+$/g, ''));
+      var hardBreak =
+        /^[・●○■□◆◇▼▽\-–—*＊]/.test(line) ||                 // list item
+        /^(第[0-9０-９一二三四五六七八九十百]+[章節部回条]|[0-9０-９]+[\.．、])/.test(line) || // heading / numbered line
+        (prevLine.length < SHORT_SENTENCE && cur === prevLine.join('') &&            // a short first line of a block
+         ENDERS.indexOf(lastCh) < 0 && CLOSERS.indexOf(lastCh) < 0 &&
+         'をはがのにへでともやかよね、，'.indexOf(lastCh) < 0);                       // ...that doesn't end mid-sentence: heading
+      if (hardBreak) { flush(); cur = line; continue; }
+      var a = lastCh, b = line.charAt(0);
+      var space = /[A-Za-z0-9,;:]/.test(a) && /[A-Za-z0-9]/.test(b) ? ' ' : '';
+      cur = prev + space + line;
+    }
+    flush();
+    return paras;
+  }
+
+  // Split one paragraph at sentence ends only; never inside 「」『』（）, numbers or words.
+  function splitParagraph(para) {
+    var chars = Array.from(para);
+    var out = [];
     var buf = '';
+    var depth = 0;
     for (var i = 0; i < chars.length; i++) {
       var c = chars[i];
       buf += c;
-      if (enders.test(c)) {
-        while (i + 1 < chars.length && closers.test(chars[i + 1])) {
-          i += 1;
-          buf += chars[i];
-        }
-        var t = buf.replace(/^\s+|\s+$/g, '');
-        if (t) chunks.push(t);
-        buf = '';
-      } else if (c === '\n' && buf.indexOf('\n\n') !== -1) {
-        var t2 = buf.replace(/^\s+|\s+$/g, '');
-        if (t2) chunks.push(t2);
-        buf = '';
-      }
-    }
-    var last = buf.replace(/^\s+|\s+$/g, '');
-    if (last) chunks.push(last);
-
-    var out = [];
-    for (var k = 0; k < chunks.length; k++) {
-      splitLong(chunks[k], out);
-    }
-    return out;
-  }
-
-  function splitLong(chunk, out) {
-    var arr = Array.from(chunk);
-    if (arr.length <= MAX_UTTER) {
-      out.push(chunk);
-      return;
-    }
-    var start = 0;
-    while (start < arr.length) {
-      var end = Math.min(arr.length, start + MAX_UTTER);
-      if (end < arr.length) {
-        var cut = -1;
-        for (var j = end - 1; j > start + 40; j--) {
-          if (arr[j] === '、' || arr[j] === '，' || arr[j] === '；' || arr[j] === '・' || arr[j] === '\n') {
-            cut = j + 1;
-            break;
+      if (OPENERS.indexOf(c) >= 0) { depth += 1; continue; }
+      if (CLOSERS.indexOf(c) >= 0) {
+        if (depth > 0) depth -= 1;
+        // 「…。」 followed by a new quote or the paragraph end closes a sentence; 「…。」と言った continues.
+        if (depth === 0 && i > 0 && ENDERS.indexOf(chars[i - 1]) >= 0) {
+          var nx = chars[i + 1];
+          if (nx === undefined || OPENERS.indexOf(nx) >= 0 || /\s/.test(nx)) {
+            pushPiece();
           }
         }
-        if (cut !== -1) end = cut;
+        continue;
       }
-      var piece = arr.slice(start, end).join('').replace(/^\s+|\s+$/g, '');
-      if (piece) out.push(piece);
-      start = end;
+      if (ENDERS.indexOf(c) < 0) continue;
+      // decimal point / abbreviation: ．or ! between digits or ASCII letters is not a sentence end
+      if (c === '．' && /[0-9０-９A-Za-z]/.test(chars[i - 1] || '') && /[0-9０-９A-Za-z]/.test(chars[i + 1] || '')) continue;
+      // absorb runs like 「！？」「。」」
+      while (i + 1 < chars.length && (ENDERS.indexOf(chars[i + 1]) >= 0 || chars[i + 1] === '…' || chars[i + 1] === '‥')) { i += 1; buf += chars[i]; }
+      if (depth > 0) {
+        // Inside brackets: do not split, unless brackets look broken (OCR) and the sentence is huge.
+        if (Array.from(buf).length < LONG_SENTENCE * 2) continue;
+        depth = 0;
+      }
+      while (i + 1 < chars.length && CLOSERS.indexOf(chars[i + 1]) >= 0) { i += 1; buf += chars[i]; }
+      pushPiece();
     }
+    pushPiece();
+    return out;
+    function pushPiece() {
+      var t = buf.replace(/^\s+|\s+$/g, '');
+      if (t) out.push(t);
+      buf = '';
+    }
+  }
+
+  // Only a genuinely very long sentence is split, at the 、 nearest the middle (recursively).
+  function splitLong(sentence, out) {
+    var arr = Array.from(sentence);
+    if (arr.length <= LONG_SENTENCE) { out.push(sentence); return; }
+    var mid = Math.floor(arr.length / 2);
+    var best = -1, depth = 0, bestDist = Infinity;
+    var depthAt = [];
+    for (var i = 0; i < arr.length; i++) {
+      if (OPENERS.indexOf(arr[i]) >= 0) depth += 1;
+      else if (CLOSERS.indexOf(arr[i]) >= 0 && depth > 0) depth -= 1;
+      depthAt.push(depth);
+    }
+    var marks = ['、', '，', ',', '；', ';'];
+    for (var pass = 0; pass < 2 && best < 0; pass++) {
+      for (var j = 20; j < arr.length - 20; j++) {
+        if (marks.indexOf(arr[j]) < 0) continue;
+        if (pass === 0 && depthAt[j] > 0) continue; // prefer commas outside brackets
+        var d = Math.abs(j + 1 - mid);
+        if (d < bestDist) { bestDist = d; best = j + 1; }
+      }
+    }
+    if (best < 0) {
+      for (var k = 20; k < arr.length - 20; k++) {
+        if (arr[k] === ' ' || arr[k] === '\u3000') {
+          var d2 = Math.abs(k - mid);
+          if (d2 < bestDist) { bestDist = d2; best = k + 1; }
+        }
+      }
+    }
+    if (best < 0) { out.push(sentence); return; } // no safe place: keep whole rather than cut a word
+    splitLong(arr.slice(0, best).join('').replace(/^\s+|\s+$/g, ''), out);
+    splitLong(arr.slice(best).join('').replace(/^\s+|\s+$/g, ''), out);
+  }
+
+  function splitSentences(text) {
+    var paras = joinWrappedLines(text);
+    var out = [];
+    for (var p = 0; p < paras.length; p++) {
+      var pieces = [];
+      splitParagraph(paras[p]).forEach(function (s) { splitLong(s, pieces); });
+      // merge very short sentences (e.g. 「はい。」) with the next one in the same paragraph
+      var merged = [];
+      for (var i = 0; i < pieces.length; i++) {
+        var cur = pieces[i];
+        while (Array.from(cur).length < SHORT_SENTENCE && i + 1 < pieces.length &&
+               Array.from(cur + pieces[i + 1]).length <= LONG_SENTENCE) {
+          i += 1;
+          cur += pieces[i];
+        }
+        merged.push(cur);
+      }
+      for (var m = 0; m < merged.length; m++) out.push(merged[m]);
+    }
+    return out;
   }
 
   function sentencesWithPages(pages) {
@@ -558,6 +630,13 @@ window.YOMIAGE_LIB = {
       var sents = splitSentences(p.text);
       if (!sents.length && p.text && p.text.trim()) sents = [p.text.trim()];
       for (var j = 0; j < sents.length; j++) {
+        var prev = list[list.length - 1];
+        // A sentence that runs over a page break: keep it in one piece (it starts on the earlier page).
+        if (j === 0 && prev && prev.page !== p.page && !/[。！？!?．」』）)…]$/.test(prev.text) &&
+            Array.from(prev.text + sents[j]).length <= LONG_SENTENCE * 2) {
+          prev.text += sents[j];
+          continue;
+        }
         list.push({ page: p.page, text: sents[j] });
       }
     }
@@ -762,7 +841,7 @@ window.YOMIAGE_LIB = {
     var offs = [], sum = 0;
     for (var i = 0; i < state.parts.length; i++) {
       offs.push(sum);
-      sum += buildUtterances(state.parts[i]).length;
+      sum += state.parts[i].sentences.length;
     }
     offs.total = sum;
     state._chunkParts = state.parts;
@@ -770,11 +849,15 @@ window.YOMIAGE_LIB = {
     return offs;
   }
 
+  // Position in real sentences: 「12 / 340文目」
   function chunkPosition() {
     if (!state.parts.length) return null;
     var offs = chunkTable();
-    var n = (offs[state.partIndex] || 0) + Math.min(state.itemIndex, buildUtterances(state.parts[state.partIndex] || state.parts[0]).length - 1) + 1;
-    return { n: n, total: offs.total };
+    var part = state.parts[state.partIndex] || state.parts[0];
+    var nSent = part.sentences.length;
+    var item = buildUtterances(part)[Math.min(state.itemIndex, nSent + 1)] || { sentIndex: -1 };
+    var si = item.sentIndex >= 0 ? item.sentIndex : (item.sentIndex === -1 ? 0 : nSent - 1);
+    return { n: (offs[state.partIndex] || 0) + Math.max(0, si) + 1, total: offs.total };
   }
 
   function updateButtons() {
@@ -1318,7 +1401,7 @@ window.YOMIAGE_LIB = {
 
   /*
    * Speech engine, built for Android Chrome:
-   * - short chunks (MAX_UTTER), one utterance at a time, never pause()/resume() on Android
+   * - one whole sentence per utterance (Android's engine accepts up to ~4000 chars), one at a time, never pause()/resume() on Android
    *   (on Android pause() silently stops speech and onend never fires),
    * - strong references to utterances so they are not garbage-collected before onend,
    * - a per-chunk watchdog that recovers when onend is lost or speech is cut,
