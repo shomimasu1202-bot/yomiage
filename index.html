@@ -1,0 +1,1664 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#1b6b4a">
+<title>読み上げくん</title>
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<link rel="manifest" href="./manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="読み上げくん">
+<meta name="application-name" content="読み上げくん">
+<style>
+  :root {
+    --bg: #f4efe4;
+    --paper: #fffdf8;
+    --ink: #1c1914;
+    --muted: #5a544a;
+    --line: #d8d1c4;
+    --play: #1b6b4a;
+    --play-on: #15563b;
+    --stop: #8a382c;
+    --btn: #2a4b6e;
+    --btn2: #3d3a35;
+    --current: #ffe08a;
+    --warn: #7a4a12;
+    --warn-bg: #f8e7c8;
+    --ok: #1b6b4a;
+    --radius: 14px;
+    --shadow: 0 1px 3px rgba(40,30,10,.12);
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 18px; -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP",
+      "Noto Sans CJK JP", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    padding: 12px 12px calc(24px + env(safe-area-inset-bottom));
+    max-width: 720px;
+    margin-inline: auto;
+  }
+  h1 {
+    font-size: 1.55rem;
+    margin: 8px 0 4px;
+    letter-spacing: .04em;
+    text-align: center;
+  }
+  .lead {
+    text-align: center;
+    color: var(--muted);
+    font-size: .95rem;
+    margin: 0 0 14px;
+  }
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin: 0 0 12px;
+    box-shadow: var(--shadow);
+  }
+  .notice {
+    background: var(--warn-bg);
+    color: var(--warn);
+    border: 1px solid #e6cc96;
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin: 0 0 12px;
+    font-size: .95rem;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0;
+  }
+  .row > button { flex: 1 1 30%; }
+  button, .file-btn {
+    appearance: none;
+    border: none;
+    border-radius: 12px;
+    min-height: 56px;
+    padding: 10px 12px;
+    font-size: 1.05rem;
+    font-weight: 700;
+    font-family: inherit;
+    color: #fff;
+    background: var(--btn);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:disabled, .file-btn[aria-disabled="true"] {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+  button.play { background: var(--play); }
+  button.play:active { background: var(--play-on); }
+  button.stop { background: var(--stop); }
+  button.ghost {
+    background: #ece7dc;
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .file-btn {
+    display: block;
+    width: 100%;
+    text-align: center;
+    background: var(--play);
+    font-size: 1.15rem;
+  }
+  #file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    font-size: 1.05rem;
+  }
+  .toggle input {
+    width: 22px;
+    height: 22px;
+    accent-color: var(--play);
+  }
+  .progress-wrap { margin: 8px 0 0; }
+  .bar {
+    height: 10px;
+    background: #e7e0d3;
+    border-radius: 99px;
+    overflow: hidden;
+    margin-top: 6px;
+  }
+  .bar > i {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--play);
+    transition: width .2s;
+  }
+  #status {
+    font-size: 1rem;
+    min-height: 1.5em;
+    margin: 0;
+  }
+  #now-playing {
+    font-weight: 700;
+    margin: 4px 0 0;
+  }
+  .speed {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .speed input { flex: 1; height: 36px; }
+  .speed label { font-weight: 700; min-width: 6.5em; }
+  #text-view {
+    max-height: min(58vh, 640px);
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px 8px 20px;
+    font-size: 1.08rem;
+    line-height: 1.95;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--paper);
+  }
+  .page-mark {
+    display: block;
+    text-align: center;
+    font-weight: 700;
+    color: var(--btn);
+    margin: 1.1em 0 .5em;
+    letter-spacing: .06em;
+  }
+  .sentence.current {
+    background: var(--current);
+    border-radius: 4px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  details.help {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 8px 14px 10px;
+    margin: 0 0 12px;
+  }
+  details.help summary {
+    font-weight: 700;
+    font-size: 1.05rem;
+    cursor: pointer;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+  details.help ol { padding-left: 1.4em; margin: .4em 0; }
+  details.help li { margin: .35em 0; }
+  .hint { color: var(--muted); font-size: .92rem; margin: .6em 0 0; }
+  dialog {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    width: min(92vw, 520px);
+    padding: 16px;
+    background: var(--paper);
+    color: var(--ink);
+  }
+  dialog::backdrop { background: rgba(20,16,10,.45); }
+  #part-list button {
+    width: 100%;
+    text-align: left;
+    background: #ece7dc;
+    color: var(--ink);
+    margin: 0 0 8px;
+    font-weight: 600;
+  }
+  #part-list button.active { background: var(--current); }
+  .error { color: var(--stop); font-weight: 700; }
+  #lib-error { display: none; }
+  #text-editor {
+    width: 100%;
+    min-height: 240px;
+    font-size: 1.05rem;
+    line-height: 1.9;
+    font-family: inherit;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--ink);
+  }
+</style>
+</head>
+<body>
+  <h1>読み上げくん</h1>
+  <p class="lead">ファイルを選ぶと、最後まで読み上げます。<br>文書はスマホの中だけで処理し、外には送りません。</p>
+
+  <p class="notice" id="lib-error">読み込みに失敗しました。インターネットにつながる場所で、もう一度開いてください。</p>
+
+  <div class="card">
+    <label class="file-btn" id="file-btn" for="file-input">ファイルを選ぶ</label>
+    <input id="file-input" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown,text/x-markdown">
+    <label class="toggle">
+      <input type="checkbox" id="chk-vertical" checked>
+      縦書きの本（スキャンした本）
+    </label>
+    <p class="hint">紙の本を撮影したPDFや、文字が入っていないスキャンは、上のチェックを入れたまま選んでください。文字が入っているPDFや、普通のテキスト、ボットが作った .txt はそのままで大丈夫です。</p>
+  </div>
+
+  <p class="notice">読み上げ中に画面が消えると、途中で止まります。画面をつけたままにするか、設定の「画面消灯」を「しない」にしてください。</p>
+
+  <div class="card" id="work-card">
+    <p id="status">ファイルを選ぶと、ここに本文が表示されます。</p>
+    <div class="progress-wrap" id="progress-wrap" hidden>
+      <div class="bar"><i id="bar"></i></div>
+    </div>
+    <p id="now-playing" hidden></p>
+    <div class="row" id="resume-row" hidden>
+      <button type="button" class="play" id="btn-resume">続きから再生</button>
+      <button type="button" class="ghost" id="btn-from-start">最初から</button>
+    </div>
+    <div class="row">
+      <button type="button" class="play" id="btn-play" disabled>再生</button>
+      <button type="button" class="ghost" id="btn-pause" disabled>一時停止</button>
+      <button type="button" class="stop" id="btn-stop" disabled>停止</button>
+    </div>
+    <div class="row">
+      <button type="button" class="ghost" id="btn-prev" disabled>前の回</button>
+      <button type="button" class="ghost" id="btn-next" disabled>次の回</button>
+      <button type="button" class="ghost" id="btn-parts" disabled>パート一覧</button>
+    </div>
+    <div class="speed">
+      <label for="speed">速さ <span id="speed-label">1.0</span>倍</label>
+      <input id="speed" type="range" min="0.6" max="1.6" step="0.1" value="1.0">
+    </div>
+  </div>
+
+  <div class="card" id="text-card" hidden>
+    <div class="row" id="edit-row">
+      <button type="button" class="ghost" id="btn-edit">本文を直す</button>
+    </div>
+    <div id="text-view" aria-label="本文"></div>
+    <textarea id="text-editor" hidden aria-label="本文の修正"></textarea>
+    <div class="row" id="edit-actions" hidden>
+      <button type="button" class="play" id="btn-apply-edit">直しを反映する</button>
+      <button type="button" class="ghost" id="btn-cancel-edit">やめる</button>
+    </div>
+  </div>
+
+  <details class="help">
+    <summary>使い方</summary>
+    <ol>
+      <li>「ファイルを選ぶ」を押し、PDF・テキスト・マークダウンを選びます。ボットが書き出した .txt も、そのまま選べます。</li>
+      <li>紙の本を撮影したPDFや、文字が埋め込まれていないスキャンは、「縦書きの本」にチェックを入れます。最初の1回だけ、このサイトから文字認識データを読み込みます。文書の中身は外に送りません。</li>
+      <li>本文が画面に出たら、最後まで入っているか確認できます。間違いがあれば「本文を直す」で直せます。</li>
+      <li>「再生」を押すと、頭から最後まで読み上げます。途中で止まったときに迷わないよう、各回の最初に「その1、全4回中。○ページから」と案内し、終わりにも「その1、全4回の終わりです」と言います。</li>
+      <li>「一時停止」で休めます。「前の回」「次の回」「パート一覧」で聞きたいところへ移れます。</li>
+      <li>画面が消えると読み上げが止まります。読み上げ中は画面をつけたままにしてください。</li>
+      <li>途中で閉じてしまっても、同じファイルをもう一度選べば「続きから再生」が使えます。</li>
+    </ol>
+    <p class="hint">縦書きの本文だけのページは、かなり正確に取れます。図が多いページや、影・指・ページをまたぐ文では、まだ間違えることがあります。もっと正確に取りたいときは、このボットにPDFを送って全文の文字起こしをしてもらい、できたテキストをここで開く方法が確実です。スマホの「Googleレンズ」で文字をコピーして貼り付ける方法もあります。このアプリは文書の中身をインターネットに送りません。文字起こしとPDF表示の仕組みは、この同じサイトから読み込みます。</p>
+  </details>
+
+  <dialog id="part-dialog">
+    <h2 style="margin:0 0 10px;font-size:1.2rem;">パート一覧</h2>
+    <div id="part-list"></div>
+    <button type="button" class="ghost" id="btn-close-parts" style="width:100%;">閉じる</button>
+  </dialog>
+
+<script>
+window.YOMIAGE_LIB = {
+  pdfWorker: './vendor/pdf.worker.min.js',
+  tessWorker: './vendor/worker.min.js',
+  tessCore: './vendor/tesseract-core-simd-lstm.wasm.js',
+  tessLang: './vendor/tessdata',
+  paddleModule: './vendor/paddleocr.mjs',
+  paddleDet: './vendor/models/PP-OCRv6_small_det_onnx_infer.tar',
+  paddleRec: './vendor/models/PP-OCRv6_small_rec_onnx_infer.tar',
+  ortWasmPaths: './vendor/ort/'
+};
+</script>
+<script>
+(function () {
+  'use strict';
+
+  var LIB = window.YOMIAGE_LIB || {
+    pdfWorker: './vendor/pdf.worker.min.js',
+    tessWorker: './vendor/worker.min.js',
+    tessCore: './vendor/tesseract-core-simd-lstm.wasm.js',
+    tessLang: './vendor/tessdata',
+    paddleModule: './vendor/paddleocr.mjs',
+    paddleDet: './vendor/models/PP-OCRv6_small_det_onnx_infer.tar',
+    paddleRec: './vendor/models/PP-OCRv6_small_rec_onnx_infer.tar',
+    ortWasmPaths: './vendor/ort/'
+  };
+
+  var MIN_PART = 1500;
+  var MAX_PART = 2000;
+  var TARGET_PART = 1800;
+  var MAX_UTTER = 150;
+  var TEXT_LAYER_MIN = 20;
+  var STORE_PREFIX = 'yomiage-v1:';
+
+  var tts = {
+    getVoices: function () {
+      try { return window.speechSynthesis.getVoices() || []; } catch (e) { return []; }
+    },
+    onVoicesChanged: function (fn) {
+      try {
+        if (typeof speechSynthesis.addEventListener === 'function') {
+          speechSynthesis.addEventListener('voiceschanged', fn);
+        }
+        speechSynthesis.onvoiceschanged = fn;
+      } catch (e) {}
+    },
+    utterance: function (text) {
+      return new SpeechSynthesisUtterance(text);
+    },
+    speak: function (u) { speechSynthesis.speak(u); },
+    cancel: function () { tts.cancel(); },
+    pause: function () { try { speechSynthesis.pause(); } catch (e) {} },
+    resume: function () { try { speechSynthesis.resume(); } catch (e) {} },
+    isSpeaking: function () { try { return !!speechSynthesis.speaking; } catch (e) { return false; } },
+    isPaused: function () { try { return !!speechSynthesis.paused; } catch (e) { return false; } }
+  };
+
+  function installMockSpeech() {
+    var spoken = window.__spoken || [];
+    window.__spoken = spoken;
+    tts.getVoices = function () {
+      return [{ lang: 'ja-JP', name: 'Mock Japanese', localService: true, default: true, voiceURI: 'mock-ja' }];
+    };
+    tts.onVoicesChanged = function (fn) { setTimeout(fn, 0); };
+    tts.utterance = function (text) {
+      return { text: text, lang: '', voice: null, rate: 1, onstart: null, onend: null, onerror: null };
+    };
+    tts.speak = function (u) {
+      spoken.push(u.text);
+      setTimeout(function () {
+        if (typeof u.onstart === 'function') u.onstart();
+        setTimeout(function () {
+          if (typeof u.onend === 'function') u.onend();
+        }, 0);
+      }, 0);
+    };
+    tts.cancel = function () {};
+    tts.pause = function () { tts._paused = true; };
+    tts.resume = function () { tts._paused = false; };
+    tts.isSpeaking = function () { return false; };
+    tts.isPaused = function () { return !!tts._paused; };
+  }
+
+  var $ = function (id) { return document.getElementById(id); };
+  var fileInput = $('file-input');
+  var chkVertical = $('chk-vertical');
+  var statusEl = $('status');
+  var bar = $('bar');
+  var progressWrap = $('progress-wrap');
+  var nowPlaying = $('now-playing');
+  var textView = $('text-view');
+  var textCard = $('text-card');
+  var resumeRow = $('resume-row');
+  var speedInput = $('speed');
+  var speedLabel = $('speed-label');
+  var partDialog = $('part-dialog');
+  var partList = $('part-list');
+
+  var state = {
+    fileName: '',
+    fileSize: 0,
+    pages: [],          // {page, text}
+    parts: [],          // {index,total,startPage,endPage,sentences,length}
+    sentenceNodes: [],
+    partIndex: 0,
+    itemIndex: 0,       // index in current utterance list
+    phase: 'idle',      // idle|playing|paused
+    rate: 1,
+    saved: null,
+    currentFileKey: '',
+    wakeLock: null,
+    keepAliveTimer: null,
+    cancelled: false,
+    voicesReady: false,
+    jaVoice: null,
+    tessWorker: null,
+    tessLang: '',
+    loaded: false
+  };
+
+  function setStatus(msg, isError) {
+    statusEl.textContent = msg;
+    statusEl.className = isError ? 'error' : '';
+  }
+
+  function setProgress(cur, total) {
+    progressWrap.hidden = !total;
+    if (!total) return;
+    var pct = Math.max(0, Math.min(100, Math.round((cur / total) * 100)));
+    bar.style.width = pct + '%';
+  }
+
+  function storeKey(name, size) {
+    return STORE_PREFIX + name + ':' + size;
+  }
+
+  function loadSaved(name, size) {
+    try {
+      var raw = localStorage.getItem(storeKey(name, size));
+      if (!raw) return null;
+      var data = JSON.parse(raw);
+      if (!data || typeof data.partIndex !== 'number') return null;
+      return data;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function savePos() {
+    if (!state.currentFileKey) return;
+    try {
+      localStorage.setItem(state.currentFileKey, JSON.stringify({
+        partIndex: state.partIndex,
+        itemIndex: state.itemIndex,
+        rate: state.rate,
+        ts: Date.now()
+      }));
+    } catch (e) {}
+  }
+
+  /* ---------- text helpers ---------- */
+  function splitSentences(text) {
+    var cleaned = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+    if (!cleaned) return [];
+    var chars = Array.from(cleaned);
+    var enders = /[。！？!?．]/;
+    var closers = /[」』）\)】］\]]/;
+    var chunks = [];
+    var buf = '';
+    for (var i = 0; i < chars.length; i++) {
+      var c = chars[i];
+      buf += c;
+      if (enders.test(c)) {
+        while (i + 1 < chars.length && closers.test(chars[i + 1])) {
+          i += 1;
+          buf += chars[i];
+        }
+        var t = buf.replace(/^\s+|\s+$/g, '');
+        if (t) chunks.push(t);
+        buf = '';
+      } else if (c === '\n' && buf.indexOf('\n\n') !== -1) {
+        var t2 = buf.replace(/^\s+|\s+$/g, '');
+        if (t2) chunks.push(t2);
+        buf = '';
+      }
+    }
+    var last = buf.replace(/^\s+|\s+$/g, '');
+    if (last) chunks.push(last);
+
+    var out = [];
+    for (var k = 0; k < chunks.length; k++) {
+      splitLong(chunks[k], out);
+    }
+    return out;
+  }
+
+  function splitLong(chunk, out) {
+    var arr = Array.from(chunk);
+    if (arr.length <= MAX_UTTER) {
+      out.push(chunk);
+      return;
+    }
+    var start = 0;
+    while (start < arr.length) {
+      var end = Math.min(arr.length, start + MAX_UTTER);
+      if (end < arr.length) {
+        var cut = -1;
+        for (var j = end - 1; j > start + 40; j--) {
+          if (arr[j] === '、' || arr[j] === '，' || arr[j] === '；' || arr[j] === '・' || arr[j] === '\n') {
+            cut = j + 1;
+            break;
+          }
+        }
+        if (cut !== -1) end = cut;
+      }
+      var piece = arr.slice(start, end).join('').replace(/^\s+|\s+$/g, '');
+      if (piece) out.push(piece);
+      start = end;
+    }
+  }
+
+  function sentencesWithPages(pages) {
+    var list = [];
+    for (var i = 0; i < pages.length; i++) {
+      var p = pages[i];
+      var sents = splitSentences(p.text);
+      if (!sents.length && p.text && p.text.trim()) sents = [p.text.trim()];
+      for (var j = 0; j < sents.length; j++) {
+        list.push({ page: p.page, text: sents[j] });
+      }
+    }
+    return list;
+  }
+
+  function splitParts(pageSentences, minLen, maxLen, target) {
+    minLen = minLen == null ? MIN_PART : minLen;
+    maxLen = maxLen == null ? MAX_PART : maxLen;
+    target = target == null ? TARGET_PART : target;
+    var parts = [];
+    var cur = [];
+    var curLen = 0;
+
+    function flush() {
+      if (!cur.length) return;
+      var startPage = cur[0].page;
+      var endPage = cur[cur.length - 1].page;
+      parts.push({
+        sentences: cur,
+        startPage: startPage,
+        endPage: endPage,
+        length: curLen
+      });
+      cur = [];
+      curLen = 0;
+    }
+
+    for (var i = 0; i < pageSentences.length; i++) {
+      var s = pageSentences[i];
+      var n = s.text.length;
+      if (cur.length && curLen + n > maxLen) {
+        if (curLen >= minLen || curLen >= 800) flush();
+      }
+      cur.push(s);
+      curLen += n;
+      if (curLen >= maxLen) flush();
+    }
+    flush();
+
+    if (parts.length >= 2) {
+      var last = parts[parts.length - 1];
+      var prev = parts[parts.length - 2];
+      if (last.length < 400 && prev.length + last.length <= 2300) {
+        prev.sentences = prev.sentences.concat(last.sentences);
+        prev.endPage = last.endPage;
+        prev.length += last.length;
+        parts.pop();
+      }
+    }
+
+    return parts.map(function (p, idx) {
+      return {
+        index: idx + 1,
+        total: parts.length,
+        startPage: p.startPage,
+        endPage: p.endPage,
+        sentences: p.sentences,
+        length: p.length
+      };
+    });
+  }
+
+  function introText(part) {
+    var n = part.index, m = part.total;
+    var a = part.startPage, b = part.endPage;
+    if (a && b) {
+      if (a === b) return 'その' + n + '、全' + m + '回中。' + a + 'ページです。';
+      return 'その' + n + '、全' + m + '回中。' + a + 'ページから' + b + 'ページです。';
+    }
+    return 'その' + n + '、全' + m + '回中です。';
+  }
+
+  function outroText(part) {
+    return 'その' + part.index + '、全' + part.total + '回の終わりです。';
+  }
+
+  function buildUtterances(part) {
+    var list = [];
+    list.push({ type: 'intro', text: introText(part), sentIndex: -1 });
+    for (var i = 0; i < part.sentences.length; i++) {
+      list.push({ type: 'sentence', text: part.sentences[i].text, sentIndex: i });
+    }
+    list.push({ type: 'outro', text: outroText(part), sentIndex: -2 });
+    if (part.index === part.total) {
+      list.push({ type: 'final', text: '以上で全文の読み上げを終わります。', sentIndex: -3 });
+    }
+    return list;
+  }
+
+  function cleanupJapaneseOcr(text) {
+    var t = String(text || '').replace(/\r/g, '');
+    t = t.replace(/([一-龥々〆〇ぁ-んァ-ヶー])[ \t]+(?=[一-龥々〆〇ぁ-んァ-ヶー])/g, '$1');
+    t = t.replace(/[ \t]+([。、！？…・」』）])/g, '$1');
+    t = t.replace(/([「『（])[ \t]+/g, '$1');
+    var lines = t.split('\n');
+    var kept = [];
+    for (var i = 0; i < lines.length; i++) {
+      var s = lines[i].replace(/^\s+|\s+$/g, '');
+      if (!s) { kept.push(''); continue; }
+      var cjk = (s.match(/[一-龥々〆〇ぁ-んァ-ヶー]/g) || []).length;
+      var symbols = (s.match(/[|_=━─~^`@#$\\/<>\[\]{}]/g) || []).length;
+      var total = s.replace(/\s/g, '').length;
+      if (!total) continue;
+      if (cjk < 3 && symbols >= 2) continue;
+      if (cjk === 0) continue;
+      if (cjk / total < 0.35 && cjk < 8) continue;
+      kept.push(s);
+    }
+    return kept.join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\s+|\s+$/g, '');
+  }
+
+  function stripMarkdown(raw) {
+    return String(raw)
+      .replace(/^\uFEFF/, '')
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/__(.+?)__/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/^[-*+]\s+/gm, '・')
+      .replace(/^>\s?/gm, '');
+  }
+
+  function decodeTextBuffer(buf) {
+    var utf8 = new TextDecoder('utf-8', { fatal: false }).decode(buf);
+    var bad = (utf8.match(/\uFFFD/g) || []).length;
+    if (bad >= 3) {
+      try {
+        return new TextDecoder('shift_jis', { fatal: false }).decode(buf);
+      } catch (e) {
+        return utf8;
+      }
+    }
+    return utf8;
+  }
+
+  /* ---------- render ---------- */
+  function renderText() {
+    textView.innerHTML = '';
+    state.sentenceNodes = [];
+    var lastPage = null;
+    var global = 0;
+    for (var p = 0; p < state.parts.length; p++) {
+      var part = state.parts[p];
+      for (var i = 0; i < part.sentences.length; i++) {
+        var s = part.sentences[i];
+        if (s.page && s.page !== lastPage) {
+          var mark = document.createElement('div');
+          mark.className = 'page-mark';
+          mark.textContent = '—— ' + s.page + 'ページ ——';
+          textView.appendChild(mark);
+          lastPage = s.page;
+        }
+        var span = document.createElement('span');
+        span.className = 'sentence';
+        span.dataset.part = String(p);
+        span.dataset.sent = String(i);
+        span.dataset.g = String(global);
+        span.textContent = s.text;
+        textView.appendChild(span);
+        textView.appendChild(document.createTextNode('\n'));
+        state.sentenceNodes.push(span);
+        global += 1;
+      }
+    }
+    textCard.hidden = state.sentenceNodes.length === 0;
+  }
+
+  function highlight(partIndex, sentIndex) {
+    var nodes = textView.querySelectorAll('.sentence.current');
+    for (var i = 0; i < nodes.length; i++) nodes[i].classList.remove('current');
+    if (sentIndex == null || sentIndex < 0) return;
+    var el = textView.querySelector('.sentence[data-part="' + partIndex + '"][data-sent="' + sentIndex + '"]');
+    if (el) {
+      el.classList.add('current');
+      try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+    }
+  }
+
+  function updateNowPlaying() {
+    if (!state.parts.length) {
+      nowPlaying.hidden = true;
+      return;
+    }
+    var part = state.parts[state.partIndex] || state.parts[0];
+    var range = '';
+    if (part.startPage && part.endPage) {
+      range = part.startPage === part.endPage
+        ? '（' + part.startPage + 'ページ）'
+        : '（' + part.startPage + '〜' + part.endPage + 'ページ）';
+    }
+    nowPlaying.hidden = false;
+    nowPlaying.textContent = '今：その' + part.index + ' / 全' + part.total + '回' + range;
+  }
+
+  function updateButtons() {
+    var ready = state.loaded && state.parts.length > 0;
+    $('btn-play').disabled = !ready || state.phase === 'playing';
+    $('btn-pause').disabled = !ready || state.phase !== 'playing';
+    $('btn-stop').disabled = !ready || state.phase === 'idle';
+    $('btn-prev').disabled = !ready || state.partIndex <= 0;
+    $('btn-next').disabled = !ready || state.partIndex >= state.parts.length - 1;
+    $('btn-parts').disabled = !ready;
+  }
+
+  function showResumeIfAny() {
+    var s = state.saved;
+    if (!s || !state.parts.length) {
+      resumeRow.hidden = true;
+      return;
+    }
+    if (s.partIndex < 0 || s.partIndex >= state.parts.length) {
+      resumeRow.hidden = true;
+      return;
+    }
+    if (s.partIndex === 0 && (!s.itemIndex || s.itemIndex <= 0)) {
+      resumeRow.hidden = true;
+      return;
+    }
+    resumeRow.hidden = false;
+    var part = state.parts[s.partIndex];
+    $('btn-resume').textContent = '続きから再生（その' + part.index + '）';
+  }
+
+  /* ---------- PDF / OCR ---------- */
+  function pdfLibsReady() {
+    return typeof pdfjsLib !== 'undefined';
+  }
+  function tessReady() {
+    return typeof Tesseract !== 'undefined';
+  }
+
+  function itemsToText(items) {
+    if (!items || !items.length) return '';
+    var out = '';
+    var last = null;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      var s = it.str || '';
+      if (!s) {
+        if (it.hasEOL) out += '\n';
+        continue;
+      }
+      if (last) {
+        var y = it.transform ? it.transform[5] : 0;
+        var ly = last.transform ? last.transform[5] : 0;
+        var x = it.transform ? it.transform[4] : 0;
+        var lx = last.transform ? last.transform[4] + (last.width || 0) : 0;
+        var sameLine = Math.abs(y - ly) < 3;
+        if (!sameLine || it.hasEOL) out += '\n';
+        else if (x - lx > 1.2) {
+          var a = last.str ? last.str.slice(-1) : '';
+          var needSpace = /[A-Za-z0-9]/.test(a) || /[A-Za-z0-9]/.test(s.charAt(0));
+          if (needSpace) out += ' ';
+        }
+      }
+      out += s;
+      last = it;
+    }
+    return out.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/^\s+|\s+$/g, '');
+  }
+
+  function preprocessCanvas(src) {
+    var w = src.width, h = src.height;
+    var mx = Math.round(w * 0.02);
+    var my = Math.round(h * 0.012);
+    var cw = Math.max(1, w - mx * 2);
+    var ch = Math.max(1, h - my * 2);
+    var c = document.createElement('canvas');
+    c.width = cw;
+    c.height = ch;
+    var ctx = c.getContext('2d');
+    try { ctx.filter = 'grayscale(100%) contrast(115%)'; } catch (e) {}
+    ctx.drawImage(src, mx, my, cw, ch, 0, 0, cw, ch);
+    return c;
+  }
+
+  function mildCropCanvas(src, frac) {
+    frac = frac == null ? 0.02 : frac;
+    var w = src.width, h = src.height;
+    var dx = Math.round(w * frac);
+    var dy = Math.round(h * frac * 0.6);
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, w - 2 * dx);
+    c.height = Math.max(1, h - 2 * dy);
+    c.getContext('2d').drawImage(src, dx, dy, c.width, c.height, 0, 0, c.width, c.height);
+    return c;
+  }
+
+  function smooth1d(arr, k) {
+    var n = arr.length, half = (k - 1) / 2, out = new Float64Array(n);
+    for (var i = 0; i < n; i++) {
+      var s = 0, c = 0;
+      for (var j = i - half; j <= i + half; j++) {
+        if (j >= 0 && j < n) { s += arr[j]; c++; }
+      }
+      out[i] = s / Math.max(1, c);
+    }
+    return out;
+  }
+
+  function findColumnPeaks(canvas) {
+    var w = canvas.width, h = canvas.height;
+    var ctx = canvas.getContext('2d', { willReadFrequently: true });
+    var img = ctx.getImageData(0, 0, w, h).data;
+    var colSum = new Float64Array(w);
+    var y0 = Math.floor(h * 0.08), y1 = Math.floor(h * 0.92);
+    for (var y = y0; y < y1; y++) {
+      for (var x = 0; x < w; x++) {
+        var i = (y * w + x) * 4;
+        var g = 0.299 * img[i] + 0.587 * img[i + 1] + 0.114 * img[i + 2];
+        if (g < 145) colSum[x] += (145 - g);
+      }
+    }
+    var k = Math.max(5, Math.floor(w / 80));
+    if (k % 2 === 0) k++;
+    var sm = smooth1d(colSum, k);
+    var min = Infinity, max = 0;
+    for (var i = 0; i < w; i++) {
+      if (sm[i] < min) min = sm[i];
+      if (sm[i] > max) max = sm[i];
+    }
+    var span = max - min;
+    if (span <= 0) return { peaks: [], med: 48 };
+    var thr = min + span * 0.18;
+    var minDist = Math.max(16, Math.floor(w / 45));
+    var peaks = [];
+    var i = 1;
+    while (i < w - 1) {
+      if (sm[i] >= sm[i - 1] && sm[i] >= sm[i + 1] && sm[i] >= thr) {
+        var j = i;
+        while (j + 1 < w && sm[j + 1] === sm[i]) j++;
+        var mid = Math.round((i + j) / 2);
+        if (!peaks.length || mid - peaks[peaks.length - 1] >= minDist) peaks.push(mid);
+        i = j + 1;
+      } else i++;
+    }
+    var med = 48;
+    if (peaks.length >= 2) {
+      var diffs = [];
+      for (var p = 1; p < peaks.length; p++) diffs.push(peaks[p] - peaks[p - 1]);
+      diffs.sort(function (a, b) { return a - b; });
+      med = diffs[Math.floor(diffs.length / 2)];
+    }
+    return { peaks: peaks, med: med };
+  }
+
+  function sliceColumn(src, x0, x1) {
+    x0 = Math.max(0, x0); x1 = Math.min(src.width, x1);
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, x1 - x0);
+    c.height = src.height;
+    c.getContext('2d').drawImage(src, x0, 0, c.width, c.height, 0, 0, c.width, c.height);
+    return c;
+  }
+
+  function rotateCCWScaled(src, targetH) {
+    targetH = targetH || 64;
+    var rot = document.createElement('canvas');
+    rot.width = src.height;
+    rot.height = src.width;
+    var ctx = rot.getContext('2d');
+    ctx.translate(0, rot.height);
+    ctx.rotate(-Math.PI / 2);
+    ctx.drawImage(src, 0, 0);
+    var scale = targetH / rot.height;
+    var out = document.createElement('canvas');
+    out.width = Math.max(32, Math.round(rot.width * scale));
+    out.height = targetH;
+    var octx = out.getContext('2d');
+    octx.imageSmoothingEnabled = true;
+    octx.imageSmoothingQuality = 'high';
+    octx.drawImage(rot, 0, 0, out.width, out.height);
+    return out;
+  }
+
+  function isOcrJunk(text, sc) {
+    var t = String(text || '').replace(/^\s+|\s+$/g, '');
+    if (!t) return true;
+    if (/^\d{1,3}$/.test(t)) return true;
+    if (t.indexOf('第') !== -1 && t.indexOf('章') !== -1 && t.length <= 40) return true;
+    var cjk = (t.match(/[一-龥々〆〇ぁ-んァ-ヶー]/g) || []).length;
+    if (cjk === 0 && t.length <= 4) return true;
+    if (t.length <= 2 && (sc == null || sc < 0.85)) return true;
+    return false;
+  }
+
+  function textsSimilar(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    var sa = {}, sb = {}, inter = 0;
+    for (var i = 0; i < a.length; i++) sa[a[i]] = 1;
+    for (var j = 0; j < b.length; j++) {
+      if (sb[b[j]]) continue;
+      sb[b[j]] = 1;
+      if (sa[b[j]]) inter++;
+    }
+    var min = Math.min(Object.keys(sa).length, Object.keys(sb).length);
+    return inter / Math.max(1, min) > 0.85 && Math.abs(a.length - b.length) <= Math.max(2, 0.15 * Math.max(a.length, b.length));
+  }
+
+  function dedupeTexts(items) {
+    var out = [];
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (out.length && textsSimilar(out[out.length - 1].txt, it.txt)) {
+        if ((it.sc || 0) > (out[out.length - 1].sc || 0) || it.txt.length > out[out.length - 1].txt.length) {
+          out[out.length - 1] = it;
+        }
+        continue;
+      }
+      out.push(it);
+    }
+    return out;
+  }
+
+  function postCorrectOcr(text) {
+    var reps = {
+      '力月': 'カ月',
+      'パパス': 'パーパス',
+      '生成A活用': '生成AI活用',
+      '生成Ａ活用': '生成AI活用',
+      '1〇n1': '1on1',
+      '1οn1': '1on1',
+      '10n1': '1on1',
+      '挪撤': '揶揄',
+      '挪揄': '揶揄',
+      '郷抑': '揶揄',
+      '問题': '問題',
+      'ビルデイング': 'ビルディング',
+      'でしようか': 'でしょうか',
+      'ないのでしよう': 'ないのでしょう',
+      'こともあるでしよう': 'こともあるでしょう'
+    };
+    var t = text;
+    Object.keys(reps).forEach(function (a) { t = t.split(a).join(reps[a]); });
+    return t;
+  }
+
+  function itemsToOcrText(items) {
+    var clean = dedupeTexts(items.filter(function (it) { return !isOcrJunk(it.txt, it.sc); }));
+    return postCorrectOcr(clean.map(function (it) { return it.txt; }).join('\n'));
+  }
+
+  function sortItemsRtl(items) {
+    if (!items.length) return [];
+    var widths = items.filter(function (it) { return it.vert; }).map(function (it) { return it.w; });
+    var medw = 50;
+    if (widths.length) {
+      widths.sort(function (a, b) { return a - b; });
+      medw = widths[Math.floor(widths.length / 2)];
+    }
+    var thresh = Math.max(28, medw * 0.75);
+    var ordered = items.slice().sort(function (a, b) { return b.cx - a.cx; });
+    var cols = [];
+    for (var i = 0; i < ordered.length; i++) {
+      var z = ordered[i], placed = false;
+      for (var c = 0; c < cols.length; c++) {
+        if (Math.abs(cols[c][0].cx - z.cx) < thresh) { cols[c].push(z); placed = true; break; }
+      }
+      if (!placed) cols.push([z]);
+    }
+    return cols.map(function (c) {
+      c.sort(function (a, b) { return a.y0 - b.y0; });
+      if (c.length === 1) return c[0];
+      var m = Object.assign({}, c[0]);
+      m.txt = c.map(function (x) { return x.txt; }).join('');
+      m.sc = c.reduce(function (s, x) { return s + (x.sc || 0); }, 0) / c.length;
+      return m;
+    });
+  }
+
+  async function ensurePaddle(onStatus) {
+    if (state.paddle) return state.paddle;
+    if (state.paddleFailed) return null;
+    if (!LIB.paddleModule) { state.paddleFailed = true; return null; }
+    try {
+      if (onStatus) onStatus('初回だけ、このアプリの文字認識データを読み込んでいます。文書の中身は外に送りません。');
+      var mod = await import(LIB.paddleModule);
+      var PaddleOCR = mod.PaddleOCR || mod.default;
+      if (!PaddleOCR || !PaddleOCR.create) throw new Error('PaddleOCR を読み込めませんでした');
+      var abs = function (p) { return p ? new URL(p, location.href).href : p; };
+      state.paddle = await PaddleOCR.create({
+        lang: 'japan',
+        ocrVersion: 'PP-OCRv6',
+        worker: false,
+        textDetectionModelName: 'PP-OCRv6_small_det',
+        textDetectionModelAsset: LIB.paddleDet ? { url: abs(LIB.paddleDet) } : undefined,
+        textRecognitionModelName: 'PP-OCRv6_small_rec',
+        textRecognitionModelAsset: LIB.paddleRec ? { url: abs(LIB.paddleRec) } : undefined,
+        ortOptions: {
+          backend: 'wasm',
+          wasmPaths: abs(LIB.ortWasmPaths || './vendor/ort/')
+        }
+      });
+      return state.paddle;
+    } catch (e) {
+      console.warn('PaddleOCR init failed', e);
+      state.paddleFailed = true;
+      return null;
+    }
+  }
+
+  async function paddlePredict(image) {
+    var ocr = state.paddle;
+    var results = await ocr.predict(image);
+    var result = Array.isArray(results) ? results[0] : results;
+    return (result && result.items) ? result.items : [];
+  }
+
+  async function ocrVerticalPaddle(canvas) {
+    var crop = mildCropCanvas(canvas, 0.02);
+    var found = findColumnPeaks(crop);
+    var images = [];
+    var meta = [];
+    for (var i = found.peaks.length - 1; i >= 0; i--) {
+      var pk = found.peaks[i];
+      var half = Math.max(16, Math.round(found.med * 0.5));
+      var sl = sliceColumn(crop, pk - half, pk + half);
+      images.push(rotateCCWScaled(sl, 64));
+      meta.push({ cx: pk, sc: 1 });
+    }
+    var items = [];
+    if (images.length) {
+      var results = await state.paddle.predict(images);
+      if (!Array.isArray(results)) results = [results];
+      for (var r = 0; r < results.length; r++) {
+        var res = results[r];
+        var parts = (res && res.items) ? res.items : [];
+        var txt = parts.map(function (it) { return it.text || ''; }).join('');
+        var sc = parts.length ? parts.reduce(function (s, it) { return s + (it.score || 0); }, 0) / parts.length : 0;
+        items.push({ txt: txt, sc: sc, cx: meta[r] ? meta[r].cx : 0 });
+      }
+    }
+    var text = itemsToOcrText(items);
+    var compact = text.replace(/\s/g, '');
+    // Full-page only when columns look too thin (figures, missed peaks).
+    if (compact.length >= 80 && found.peaks.length >= 6) {
+      return text;
+    }
+    var fullItems = await paddlePredict(crop);
+    var mapped = fullItems.map(function (it) {
+      var poly = it.poly || it.box || [];
+      var xs = poly.map(function (p) { return p[0]; });
+      var ys = poly.map(function (p) { return p[1]; });
+      var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+      var y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
+      return {
+        txt: it.text || '',
+        sc: it.score || 0,
+        cx: (x0 + x1) / 2,
+        y0: y0, y1: y1,
+        w: x1 - x0, h: y1 - y0,
+        vert: (y1 - y0) > (x1 - x0) * 1.2
+      };
+    });
+    var rtl = sortItemsRtl(mapped);
+    var fullText = itemsToOcrText(rtl);
+    // prefer column text if reasonably long; otherwise full-page
+    if (!text || (fullText && fullText.replace(/\s/g, '').length > text.replace(/\s/g, '').length * 1.15)) {
+      return fullText || text;
+    }
+    return text;
+  }
+
+  async function ocrFullPagePaddle(canvas) {
+    var crop = mildCropCanvas(canvas, 0.02);
+    var items = await paddlePredict(crop);
+    var mapped = items.map(function (it) {
+      return { txt: it.text || '', sc: it.score || 0, cx: 0 };
+    });
+    return itemsToOcrText(mapped);
+  }
+
+  async function getTessWorker(vertical) {
+    if (!tessReady()) throw new Error('文字起こしの仕組みを読み込めませんでした。');
+    var lang = vertical ? 'jpn_vert' : 'jpn';
+    if (state.tessWorker && state.tessLang === lang) return state.tessWorker;
+    if (state.tessWorker) {
+      try { await state.tessWorker.terminate(); } catch (e) {}
+      state.tessWorker = null;
+    }
+    var worker = await Tesseract.createWorker(lang, 1, {
+      workerPath: LIB.tessWorker,
+      corePath: LIB.tessCore,
+      langPath: LIB.tessLang,
+      logger: function () {}
+    });
+    var psm = vertical ? '5' : '3';
+    await worker.setParameters({ tessedit_pageseg_mode: psm });
+    state.tessWorker = worker;
+    state.tessLang = lang;
+    return worker;
+  }
+
+  async function ocrCanvas(canvas, vertical, onStatus) {
+    var paddle = await ensurePaddle(onStatus);
+    if (paddle) {
+      try {
+        if (vertical) return await ocrVerticalPaddle(canvas);
+        return await ocrFullPagePaddle(canvas);
+      } catch (e) {
+        console.warn('PaddleOCR page failed, falling back', e);
+      }
+    }
+    var worker = await getTessWorker(vertical);
+    var pre = preprocessCanvas(canvas);
+    var result = await worker.recognize(pre);
+    var text = cleanupJapaneseOcr(result && result.data ? result.data.text : '');
+    return postCorrectOcr(text);
+  }
+
+  async function extractPdf(file, vertical, onProgress) {
+    if (!pdfLibsReady()) throw new Error('PDFの仕組みを読み込めませんでした。');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = LIB.pdfWorker;
+    var buf = await file.arrayBuffer();
+    var doc = await pdfjsLib.getDocument({ data: buf, disableRange: true, disableStream: true }).promise;
+    var pages = [];
+    var n = doc.numPages;
+    var usedOcr = false;
+    for (var i = 1; i <= n; i++) {
+      if (onProgress) onProgress(i, n, 'text');
+      var page = await doc.getPage(i);
+      var tc = await page.getTextContent();
+      var text = itemsToText(tc.items);
+      var compact = text.replace(/\s+/g, '');
+      if (compact.length < TEXT_LAYER_MIN) {
+        usedOcr = true;
+        if (onProgress) onProgress(i, n, 'ocr');
+        var base = page.getViewport({ scale: 1 });
+        var longSide = Math.max(base.width, base.height);
+        var scale = Math.min(2.4, Math.max(1.6, 1800 / longSide));
+        var viewport = page.getViewport({ scale: scale });
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        var ctx = canvas.getContext('2d', { willReadFrequently: true });
+        await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+        if (onProgress) onProgress(i, n, 'ocr-prep');
+        text = await ocrCanvas(canvas, vertical, function (msg) { setStatus(msg); });
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+      pages.push({
+        page: i,
+        text: text || '',
+        ocrFailed: !text
+      });
+    }
+    try { await doc.destroy(); } catch (e) {}
+    if (state.tessWorker) {
+      try { await state.tessWorker.terminate(); } catch (e) {}
+      state.tessWorker = null;
+      state.tessLang = '';
+    }
+    return { pages: pages, usedOcr: usedOcr, numPages: n };
+  }
+
+  function applyPages(pages, fileName, fileSize) {
+    state.pages = pages;
+    var sents = sentencesWithPages(pages);
+    state.parts = splitParts(sents);
+    state.partIndex = 0;
+    state.itemIndex = 0;
+    state.phase = 'idle';
+    state.fileName = fileName;
+    state.fileSize = fileSize;
+    state.currentFileKey = storeKey(fileName, fileSize);
+    state.saved = loadSaved(fileName, fileSize);
+    state.loaded = state.parts.length > 0;
+    renderText();
+    updateNowPlaying();
+    updateButtons();
+    showResumeIfAny();
+    var totalChars = sents.reduce(function (a, s) { return a + s.text.length; }, 0);
+    if (!state.loaded) {
+      setStatus('文字を取り出せませんでした。別のファイルを試すか、縦書きのチェックを切り替えてもう一度選んでください。', true);
+    } else {
+      var pcount = pages.length;
+      setStatus('本文を取り出しました。' + pcount + 'ページ、' + state.parts.length + '回に分けて読み上げます（約' + totalChars.toLocaleString('ja-JP') + '文字）。内容を確認して、「再生」を押してください。');
+    }
+    return { pages: pages, parts: state.parts, sentences: sents, totalChars: totalChars };
+  }
+
+  /* ---------- speech ---------- */
+  function pickVoice() {
+    var voices = [];
+    try { voices = tts.getVoices() || []; } catch (e) { voices = []; }
+    state.jaVoice =
+      voices.filter(function (v) { return v.lang === 'ja-JP' && v.localService; })[0] ||
+      voices.filter(function (v) { return v.lang === 'ja-JP'; })[0] ||
+      voices.filter(function (v) { return (v.lang || '').indexOf('ja') === 0; })[0] ||
+      null;
+    state.voicesReady = voices.length > 0 || state.voicesReady;
+    return state.jaVoice;
+  }
+
+  function waitForVoices() {
+    pickVoice();
+    if (state.jaVoice || state.voicesReady) return Promise.resolve(state.jaVoice);
+    return new Promise(function (resolve) {
+      var done = false;
+      var finish = function () {
+        if (done) return;
+        done = true;
+        pickVoice();
+        resolve(state.jaVoice);
+      };
+      tts.onVoicesChanged(finish);
+      setTimeout(finish, 1500);
+    });
+  }
+
+  async function requestWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try {
+      state.wakeLock = await navigator.wakeLock.request('screen');
+      state.wakeLock.addEventListener('release', function () {});
+    } catch (e) {}
+  }
+
+  async function releaseWakeLock() {
+    try { if (state.wakeLock) await state.wakeLock.release(); } catch (e) {}
+    state.wakeLock = null;
+  }
+
+  function startKeepAlive() {
+    stopKeepAlive();
+    state.keepAliveTimer = setInterval(function () {
+      if (state.phase !== 'playing') return;
+      try {
+        if (tts.isSpeaking() && !tts.isPaused()) {
+          tts.pause();
+          tts.resume();
+        }
+      } catch (e) {}
+    }, 12000);
+  }
+
+  function stopKeepAlive() {
+    if (state.keepAliveTimer) {
+      clearInterval(state.keepAliveTimer);
+      state.keepAliveTimer = null;
+    }
+  }
+
+  function speakFrom(partIndex, itemIndex) {
+    if (!state.parts.length) return;
+    if (partIndex < 0 || partIndex >= state.parts.length) return;
+    state.cancelled = true;
+    tts.cancel();
+    state.partIndex = partIndex;
+    state.itemIndex = Math.max(0, itemIndex || 0);
+    state.cancelled = false;
+    state.phase = 'playing';
+    updateNowPlaying();
+    updateButtons();
+    savePos();
+    requestWakeLock();
+    startKeepAlive();
+    setTimeout(function () {
+      if (state.cancelled || state.phase !== 'playing') return;
+      speakNext();
+    }, 120);
+  }
+
+  function speakNext() {
+    if (state.cancelled || state.phase !== 'playing') return;
+    var part = state.parts[state.partIndex];
+    if (!part) return finishAll();
+    var list = buildUtterances(part);
+    if (state.itemIndex >= list.length) {
+      if (state.partIndex >= state.parts.length - 1) return finishAll();
+      state.partIndex += 1;
+      state.itemIndex = 0;
+      updateNowPlaying();
+      savePos();
+      return speakNext();
+    }
+    var item = list[state.itemIndex];
+    highlight(state.partIndex, item.sentIndex);
+    var u = tts.utterance(item.text);
+    u.lang = 'ja-JP';
+    u.rate = state.rate;
+    if (state.jaVoice) u.voice = state.jaVoice;
+    u.onstart = function () {
+      if (item.type === 'sentence') highlight(state.partIndex, item.sentIndex);
+    };
+    u.onend = function () {
+      if (state.cancelled || state.phase !== 'playing') return;
+      state.itemIndex += 1;
+      savePos();
+      setTimeout(speakNext, 40);
+    };
+    u.onerror = function () {
+      if (state.cancelled || state.phase !== 'playing') return;
+      state.itemIndex += 1;
+      savePos();
+      setTimeout(speakNext, 80);
+    };
+    try {
+      tts.speak(u);
+    } catch (e) {
+      setStatus('読み上げを開始できませんでした。もう一度「再生」を押してください。', true);
+      state.phase = 'idle';
+      stopKeepAlive();
+      releaseWakeLock();
+      updateButtons();
+    }
+  }
+
+  function finishAll() {
+    state.phase = 'idle';
+    state.itemIndex = 0;
+    stopKeepAlive();
+    releaseWakeLock();
+    highlight(-1, -1);
+    updateButtons();
+    savePos();
+    setStatus('以上で、全文の読み上げを終わりました。');
+    if (typeof state.onFinish === 'function') {
+      try { state.onFinish(); } catch (e) {}
+    }
+  }
+
+  function pauseSpeech() {
+    if (state.phase !== 'playing') return;
+    state.phase = 'paused';
+    tts.pause();
+    stopKeepAlive();
+    updateButtons();
+    savePos();
+    $('btn-play').disabled = false;
+  }
+
+  function resumeSpeech() {
+    if (state.phase !== 'paused') return;
+    var speaking = false;
+    try { speaking = tts.isSpeaking() && tts.isPaused(); } catch (e) {}
+    state.phase = 'playing';
+    updateButtons();
+    requestWakeLock();
+    startKeepAlive();
+    if (speaking) {
+      try { tts.resume(); } catch (e) { speakFrom(state.partIndex, state.itemIndex); }
+    } else {
+      speakFrom(state.partIndex, state.itemIndex);
+    }
+  }
+
+  function stopSpeech(resetToStart) {
+    state.cancelled = true;
+    state.phase = 'idle';
+    tts.cancel();
+    stopKeepAlive();
+    releaseWakeLock();
+    if (resetToStart) {
+      state.partIndex = 0;
+      state.itemIndex = 0;
+      highlight(-1, -1);
+    }
+    updateNowPlaying();
+    updateButtons();
+    savePos();
+  }
+
+  async function startPlay(fromSaved) {
+    if (!state.parts.length) return;
+    if (state.phase === 'paused' && !fromSaved) {
+      resumeSpeech();
+      return;
+    }
+    var voice = await waitForVoices();
+    if (!voice) {
+      var voices = [];
+      try { voices = tts.getVoices() || []; } catch (e) {}
+      if (!voices.length) {
+        // Some browsers report empty but can still speak with lang=ja-JP.
+      } else if (!voice) {
+        setStatus('この端末に日本語の読み上げ音声が見つかりませんでした。Androidの設定で「テキスト読み上げ」の日本語を有効にしてください。そのまま試すこともできます。', true);
+      }
+    }
+    pickVoice();
+    var p = 0, item = 0;
+    if (fromSaved && state.saved) {
+      p = state.saved.partIndex || 0;
+      item = state.saved.itemIndex || 0;
+    }
+    setStatus('読み上げています。画面はつけたままにしてください。');
+    speakFrom(p, item);
+  }
+
+  /* ---------- file load ---------- */
+  async function handleFile(file) {
+    if (!file) return;
+    stopSpeech(true);
+    resumeRow.hidden = true;
+    textCard.hidden = true;
+    textView.innerHTML = '';
+    state.loaded = false;
+    state.parts = [];
+    state.pages = [];
+    updateButtons();
+    setProgress(0, 1);
+    setStatus('ファイルを読み込んでいます…');
+    try {
+      var name = file.name || 'document';
+      var lower = name.toLowerCase();
+      var pages;
+      if (lower.endsWith('.txt') || lower.endsWith('.md') || (file.type && file.type.indexOf('text/') === 0 && !lower.endsWith('.pdf'))) {
+        var buf = await file.arrayBuffer();
+        var raw = decodeTextBuffer(buf);
+        if (lower.endsWith('.md')) raw = stripMarkdown(raw);
+        pages = [{ page: null, text: raw }];
+        setProgress(1, 1);
+      } else {
+        var vertical = !!chkVertical.checked;
+        var result = await extractPdf(file, vertical, function (i, n, kind) {
+          setProgress(i - 0.2, n);
+          if (kind === 'ocr' || kind === 'ocr-prep') {
+            setStatus(i + '/' + n + 'ページ 文字起こし中（画像から読み取ります。1ページあたり少し時間がかかることがあります）');
+          } else {
+            setStatus(i + '/' + n + 'ページ 文字起こし中');
+          }
+        });
+        pages = result.pages;
+        if (result.usedOcr) {
+          var empty = pages.filter(function (p) { return !p.text; }).length;
+          if (empty) {
+            setStatus('文字起こしが終わりました。' + empty + 'ページは読み取れませんでした。本文を確認してください。');
+          }
+        }
+        setProgress(result.numPages, result.numPages);
+      }
+      applyPages(pages, name, file.size || 0);
+      setTimeout(function () { progressWrap.hidden = true; }, 600);
+    } catch (e) {
+      progressWrap.hidden = true;
+      setStatus('読み込みに失敗しました。' + (e && e.message ? e.message : ''), true);
+    }
+  }
+
+  /* ---------- events ---------- */
+  fileInput.addEventListener('change', function () {
+    var f = fileInput.files && fileInput.files[0];
+    handleFile(f);
+  });
+  $('btn-play').addEventListener('click', function () { startPlay(false); });
+  $('btn-resume').addEventListener('click', function () { startPlay(true); });
+  $('btn-from-start').addEventListener('click', function () {
+    state.saved = { partIndex: 0, itemIndex: 0 };
+    stopSpeech(true);
+    startPlay(false);
+  });
+  $('btn-pause').addEventListener('click', pauseSpeech);
+  $('btn-stop').addEventListener('click', function () { stopSpeech(false); });
+  $('btn-prev').addEventListener('click', function () {
+    if (state.partIndex <= 0) return;
+    speakFrom(state.partIndex - 1, 0);
+  });
+  $('btn-next').addEventListener('click', function () {
+    if (state.partIndex >= state.parts.length - 1) return;
+    speakFrom(state.partIndex + 1, 0);
+  });
+  $('btn-parts').addEventListener('click', function () {
+    partList.innerHTML = '';
+    state.parts.forEach(function (p, idx) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      var range = '';
+      if (p.startPage && p.endPage) {
+        range = p.startPage === p.endPage
+          ? '　' + p.startPage + 'ページ'
+          : '　' + p.startPage + '〜' + p.endPage + 'ページ';
+      }
+      b.textContent = 'その' + p.index + ' / 全' + p.total + '回' + range + '（' + p.length + '文字）';
+      if (idx === state.partIndex) b.classList.add('active');
+      b.addEventListener('click', function () {
+        partDialog.close();
+        speakFrom(idx, 0);
+      });
+      partList.appendChild(b);
+    });
+    if (typeof partDialog.showModal === 'function') partDialog.showModal();
+    else partDialog.setAttribute('open', '');
+  });
+  $('btn-close-parts').addEventListener('click', function () {
+    if (partDialog.open) partDialog.close();
+    else partDialog.removeAttribute('open');
+  });
+
+  function pagesToEditableText() {
+    return (state.pages || []).map(function (pg) {
+      var mark = pg.page ? ('—— ' + pg.page + 'ページ ——\n') : '';
+      return mark + (pg.text || '');
+    }).join('\n\n');
+  }
+
+  function parseEditedText(raw) {
+    var text = String(raw || '').replace(/\r\n/g, '\n');
+    var re = /——\s*(\d+)\s*ページ\s*——/g;
+    var matches = [];
+    var m;
+    while ((m = re.exec(text))) matches.push({ page: parseInt(m[1], 10), index: m.index, end: m.index + m[0].length });
+    if (!matches.length) {
+      return [{ page: null, text: text.replace(/^\s+|\s+$/g, '') }];
+    }
+    var pages = [];
+    for (var i = 0; i < matches.length; i++) {
+      var start = matches[i].end;
+      var stop = (i + 1 < matches.length) ? matches[i + 1].index : text.length;
+      pages.push({ page: matches[i].page, text: text.slice(start, stop).replace(/^\s+|\s+$/g, '') });
+    }
+    return pages;
+  }
+
+  function showEditor(on) {
+    $('text-view').hidden = !!on;
+    $('text-editor').hidden = !on;
+    $('edit-row').hidden = !!on;
+    $('edit-actions').hidden = !on;
+  }
+
+  $('btn-edit').addEventListener('click', function () {
+    stopSpeech(false);
+    $('text-editor').value = pagesToEditableText();
+    showEditor(true);
+    $('text-editor').focus();
+  });
+  $('btn-cancel-edit').addEventListener('click', function () {
+    showEditor(false);
+  });
+  $('btn-apply-edit').addEventListener('click', function () {
+    var pages = parseEditedText($('text-editor').value);
+    if (!pages.length || pages.every(function (pg) { return !pg.text; })) {
+      setStatus('本文が空です。直してから、もう一度反映してください。', true);
+      return;
+    }
+    applyPages(pages, state.fileName || 'edited.txt', state.fileSize || 0);
+    showEditor(false);
+    setStatus('本文の直しを反映しました。内容を確認して、「再生」を押してください。');
+  });
+
+  speedInput.addEventListener('input', function () {
+    state.rate = parseFloat(speedInput.value) || 1;
+    speedLabel.textContent = state.rate.toFixed(1);
+    savePos();
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') {
+      if (state.phase === 'playing') requestWakeLock();
+    } else if (state.phase === 'playing') {
+      // Screen off / app switch: speech often dies on Android. Keep position.
+      savePos();
+    }
+  });
+
+  if (/mockspeech=1/.test(location.search || '')) {
+    installMockSpeech();
+  }
+  pickVoice();
+  tts.onVoicesChanged(pickVoice);
+
+  function checkLibs() {
+    var ok = true;
+    // pdf and tesseract are only required when a PDF is opened; still warn if missing after load.
+    if (typeof pdfjsLib === 'undefined' || typeof Tesseract === 'undefined') {
+      ok = false;
+    }
+    var el = $('lib-error');
+    if (el) el.style.display = ok ? 'none' : 'block';
+    return ok;
+  }
+  window.addEventListener('load', function () {
+    setTimeout(checkLibs, 400);
+  });
+
+  window.__yomiage = {
+    splitSentences: splitSentences,
+    splitParts: splitParts,
+    buildUtterances: buildUtterances,
+    introText: introText,
+    outroText: outroText,
+    cleanupJapaneseOcr: cleanupJapaneseOcr,
+    stripMarkdown: stripMarkdown,
+    sentencesWithPages: sentencesWithPages,
+    applyPages: applyPages,
+    extractPdf: extractPdf,
+    handleFile: handleFile,
+    startPlay: startPlay,
+    speakFrom: speakFrom,
+    stopSpeech: stopSpeech,
+    getState: function () { return state; },
+    waitUntilDone: function () {
+      return new Promise(function (resolve) {
+        state.onFinish = function () { resolve(true); };
+      });
+    },
+    installMockSpeech: installMockSpeech,
+    tts: tts,
+    LIB: LIB,
+    ensurePaddle: ensurePaddle,
+    findColumnPeaks: findColumnPeaks,
+    ocrCanvas: ocrCanvas,
+    postCorrectOcr: postCorrectOcr,
+    itemsToOcrText: itemsToOcrText
+  };
+})();
+</script>
+<script src="./vendor/pdf.min.js"></script>
+<script src="./vendor/tesseract.min.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(function () {});
+}
+</script>
+</body>
+</html>
+

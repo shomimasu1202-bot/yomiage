@@ -1,0 +1,11 @@
+読み上げくん includes the following open-source libraries:
+
+- PDF.js (Apache-2.0) https://github.com/mozilla/pdf.js
+- Tesseract.js (Apache-2.0) https://github.com/naptha/tesseract.js
+- PaddleOCR.js / PP-OCRv6 models (Apache-2.0) https://github.com/PaddlePaddle/PaddleOCR
+- ONNX Runtime Web (MIT) https://github.com/microsoft/onnxruntime
+- OpenCV.js via @techstark/opencv-js (Apache-2.0) https://opencv.org
+- clipper-lib (Boost / BSL-1.0)
+- js-yaml (MIT)
+
+Documents you open in this app are processed only in your browser and are not sent to a server.
