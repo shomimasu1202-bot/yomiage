@@ -260,6 +260,8 @@
       <div class="bar"><i id="bar"></i></div>
     </div>
     <p id="now-playing" hidden></p>
+    <p class="error" id="voice-warn" hidden></p>
+    <p id="speech-note" hidden></p>
     <div class="row" id="resume-row" hidden>
       <button type="button" class="play" id="btn-resume">続きから再生</button>
       <button type="button" class="ghost" id="btn-from-start">最初から</button>
@@ -325,7 +327,7 @@
     var r = ev && ev.reason; show(r && r.message ? r.message : String(r || ''));
   });
 })();
-window.YOMIAGE_VERSION = '2';
+window.YOMIAGE_VERSION = '3';
 window.YOMIAGE_LIB = {
   pdfWorker: './vendor/pdf.worker.min.js',
   tessWorker: './vendor/worker.min.js',
@@ -355,7 +357,7 @@ window.YOMIAGE_LIB = {
   var MIN_PART = 1500;
   var MAX_PART = 2000;
   var TARGET_PART = 1800;
-  var MAX_UTTER = 150;
+  var MAX_UTTER = 100;
   var TEXT_LAYER_MIN = 20;
   var STORE_PREFIX = 'yomiage-v1:';
 
@@ -379,10 +381,12 @@ window.YOMIAGE_LIB = {
     pause: function () { try { speechSynthesis.pause(); } catch (e) {} },
     resume: function () { try { speechSynthesis.resume(); } catch (e) {} },
     isSpeaking: function () { try { return !!speechSynthesis.speaking; } catch (e) { return false; } },
+    isPending: function () { try { return !!speechSynthesis.pending; } catch (e) { return false; } },
     isPaused: function () { try { return !!speechSynthesis.paused; } catch (e) { return false; } }
   };
 
   function installMockSpeech() {
+    if (!window.__yomiageTimeScale) window.__yomiageTimeScale = 0.001;
     var spoken = window.__spoken || [];
     window.__spoken = spoken;
     tts.getVoices = function () {
@@ -405,6 +409,7 @@ window.YOMIAGE_LIB = {
     tts.pause = function () { tts._paused = true; };
     tts.resume = function () { tts._paused = false; };
     tts.isSpeaking = function () { return false; };
+    tts.isPending = function () { return false; };
     tts.isPaused = function () { return !!tts._paused; };
   }
 
@@ -638,7 +643,7 @@ window.YOMIAGE_LIB = {
     }
     list.push({ type: 'outro', text: outroText(part), sentIndex: -2 });
     if (part.index === part.total) {
-      list.push({ type: 'final', text: '以上で全文の読み上げを終わります。', sentIndex: -3 });
+      list.push({ type: 'final', text: '以上で、全文の読み上げを終わりました。', sentIndex: -3 });
     }
     return list;
   }
@@ -747,7 +752,29 @@ window.YOMIAGE_LIB = {
         : '（' + part.startPage + '〜' + part.endPage + 'ページ）';
     }
     nowPlaying.hidden = false;
-    nowPlaying.textContent = '今：その' + part.index + ' / 全' + part.total + '回' + range;
+    var pos = chunkPosition();
+    nowPlaying.textContent = '今：その' + part.index + ' / 全' + part.total + '回' + range +
+      (pos ? '　' + pos.n + ' / ' + pos.total + '文目' : '');
+  }
+
+  function chunkTable() {
+    if (state._chunkParts === state.parts && state._chunkOffsets) return state._chunkOffsets;
+    var offs = [], sum = 0;
+    for (var i = 0; i < state.parts.length; i++) {
+      offs.push(sum);
+      sum += buildUtterances(state.parts[i]).length;
+    }
+    offs.total = sum;
+    state._chunkParts = state.parts;
+    state._chunkOffsets = offs;
+    return offs;
+  }
+
+  function chunkPosition() {
+    if (!state.parts.length) return null;
+    var offs = chunkTable();
+    var n = (offs[state.partIndex] || 0) + Math.min(state.itemIndex, buildUtterances(state.parts[state.partIndex] || state.parts[0]).length - 1) + 1;
+    return { n: n, total: offs.total };
   }
 
   function updateButtons() {
@@ -1270,19 +1297,41 @@ window.YOMIAGE_LIB = {
 
   async function requestWakeLock() {
     if (!('wakeLock' in navigator)) return;
+    if (document.visibilityState !== 'visible') return;
+    if (state.wakeLock && !state.wakeLock.released) return;
     try {
       state.wakeLock = await navigator.wakeLock.request('screen');
-      state.wakeLock.addEventListener('release', function () {});
+      state.wakeLock.addEventListener('release', function () {
+        state.wakeLock = null;
+        if (state.phase === 'playing' && document.visibilityState === 'visible') {
+          setTimeout(requestWakeLock, 500);
+        }
+      });
     } catch (e) {}
   }
 
   async function releaseWakeLock() {
-    try { if (state.wakeLock) await state.wakeLock.release(); } catch (e) {}
+    var wl = state.wakeLock;
     state.wakeLock = null;
+    try { if (wl) await wl.release(); } catch (e) {}
   }
+
+  /*
+   * Speech engine, built for Android Chrome:
+   * - short chunks (MAX_UTTER), one utterance at a time, never pause()/resume() on Android
+   *   (on Android pause() silently stops speech and onend never fires),
+   * - strong references to utterances so they are not garbage-collected before onend,
+   * - a per-chunk watchdog that recovers when onend is lost or speech is cut,
+   * - retry once on errors, then continue, so playback never stalls.
+   */
+  var IS_ANDROID = /Android/i.test(navigator.userAgent || '');
+  var MAX_RETRY = 3;
+  function timeScale() { return window.__yomiageTimeScale || 1; }
 
   function startKeepAlive() {
     stopKeepAlive();
+    if (IS_ANDROID) return;
+    // Desktop Chrome network voices stop after ~15s; chunks are short, this is only a safety net.
     state.keepAliveTimer = setInterval(function () {
       if (state.phase !== 'playing') return;
       try {
@@ -1291,7 +1340,7 @@ window.YOMIAGE_LIB = {
           tts.resume();
         }
       } catch (e) {}
-    }, 12000);
+    }, 10000);
   }
 
   function stopKeepAlive() {
@@ -1301,13 +1350,38 @@ window.YOMIAGE_LIB = {
     }
   }
 
+  function clearWatchdog() {
+    if (state.watchdog) {
+      clearInterval(state.watchdog);
+      state.watchdog = null;
+    }
+  }
+
+  function showSpeechNote(msg) {
+    var el = $('speech-note');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.hidden = !msg;
+  }
+
+  function noteRecovery(kind) {
+    state.recoveries = (state.recoveries || 0) + 1;
+    var what = kind === 'retry' ? '同じところから読み直しました'
+      : kind === 'skip' ? '読めなかった1文を飛ばして先へ進みました'
+      : '自動で次の文へ進みました';
+    showSpeechNote('音声が途中で止まったので、' + what + '（自動で立て直した回数：' + state.recoveries + '回）');
+  }
+
   function speakFrom(partIndex, itemIndex) {
     if (!state.parts.length) return;
     if (partIndex < 0 || partIndex >= state.parts.length) return;
+    state.seq = (state.seq || 0) + 1;
+    clearWatchdog();
     state.cancelled = true;
-    tts.cancel();
+    try { tts.cancel(); } catch (e) {}
     state.partIndex = partIndex;
     state.itemIndex = Math.max(0, itemIndex || 0);
+    state.chunkTry = 0;
     state.cancelled = false;
     state.phase = 'playing';
     updateNowPlaying();
@@ -1315,10 +1389,12 @@ window.YOMIAGE_LIB = {
     savePos();
     requestWakeLock();
     startKeepAlive();
+    var mySeq = state.seq;
+    // Android drops an utterance spoken right after cancel(): wait a little.
     setTimeout(function () {
-      if (state.cancelled || state.phase !== 'playing') return;
+      if (state.cancelled || state.phase !== 'playing' || mySeq !== state.seq) return;
       speakNext();
-    }, 120);
+    }, 300);
   }
 
   function speakNext() {
@@ -1330,43 +1406,137 @@ window.YOMIAGE_LIB = {
       if (state.partIndex >= state.parts.length - 1) return finishAll();
       state.partIndex += 1;
       state.itemIndex = 0;
+      state.chunkTry = 0;
       updateNowPlaying();
       savePos();
       return speakNext();
     }
     var item = list[state.itemIndex];
+    var seq = state.seq = (state.seq || 0) + 1;
     highlight(state.partIndex, item.sentIndex);
+    updateNowPlaying();
     var u = tts.utterance(item.text);
     u.lang = 'ja-JP';
     u.rate = state.rate;
     if (state.jaVoice) u.voice = state.jaVoice;
+    var info = { seq: seq, started: false, speakingSeen: false, done: false, startAt: Date.now(), len: Array.from(item.text).length };
+    state.cur = info;
+    // Keep strong references so Chrome does not garbage-collect the utterance before onend.
+    state.utterKeep = state.utterKeep || [];
+    state.utterKeep.push(u);
+    if (state.utterKeep.length > 8) state.utterKeep.shift();
+    window.__yomiageUtterances = state.utterKeep;
+
     u.onstart = function () {
+      if (seq !== state.seq) return;
+      info.started = true;
       if (item.type === 'sentence') highlight(state.partIndex, item.sentIndex);
     };
     u.onend = function () {
-      if (state.cancelled || state.phase !== 'playing') return;
-      state.itemIndex += 1;
-      savePos();
-      setTimeout(speakNext, 40);
+      if (seq !== state.seq || state.cancelled || state.phase !== 'playing') return;
+      var el = Date.now() - info.startAt;
+      // Ended far too early for its length: Android cut it off. Read it again once.
+      if (info.len >= 30 && el < minDuration(info) && state.chunkTry < MAX_RETRY) {
+        return chunkFailed(info, 'cut');
+      }
+      chunkDone(info);
     };
-    u.onerror = function () {
-      if (state.cancelled || state.phase !== 'playing') return;
-      state.itemIndex += 1;
-      savePos();
-      setTimeout(speakNext, 80);
+    u.onerror = function (ev) {
+      if (seq !== state.seq || state.cancelled || state.phase !== 'playing') return;
+      chunkFailed(info, 'error:' + ((ev && ev.error) || ''));
     };
     try {
+      try { if (tts.isPaused()) tts.resume(); } catch (e0) {}
       tts.speak(u);
     } catch (e) {
-      setStatus('読み上げを開始できませんでした。もう一度「再生」を押してください。', true);
-      state.phase = 'idle';
-      stopKeepAlive();
-      releaseWakeLock();
-      updateButtons();
+      return chunkFailed(info, 'throw');
     }
+    startWatchdog(info);
+  }
+
+  function minDuration(info) {
+    // Fastest plausible Japanese speech is ~16 chars/s at rate 1.
+    return info.len * 60 / (state.rate || 1) * timeScale();
+  }
+
+  function trace(ev) {
+    var t = state.trace || (state.trace = []);
+    t.push(state.partIndex + ':' + state.itemIndex + ' ' + ev);
+    if (t.length > 400) t.shift();
+  }
+
+  function chunkDone(info) {
+    if (info.done) return;
+    trace('done');
+    info.done = true;
+    clearWatchdog();
+    state.itemIndex += 1;
+    state.chunkTry = 0;
+    savePos();
+    setTimeout(function () {
+      if (info.seq !== state.seq) return;
+      speakNext();
+    }, 40);
+  }
+
+  function chunkFailed(info, reason) {
+    if (info.done) return;
+    trace('fail ' + reason + ' try' + state.chunkTry);
+    info.done = true;
+    clearWatchdog();
+    state.lastFailure = reason;
+    if (state.chunkTry < MAX_RETRY) {
+      state.chunkTry += 1;
+      noteRecovery('retry');
+    } else {
+      state.chunkTry = 0;
+      state.itemIndex += 1;
+      noteRecovery('skip');
+    }
+    savePos();
+    var seq = state.seq = (state.seq || 0) + 1;
+    try { tts.cancel(); } catch (e) {}
+    setTimeout(function () {
+      if (seq !== state.seq || state.cancelled || state.phase !== 'playing') return;
+      speakNext();
+    }, 350);
+  }
+
+  function startWatchdog(info) {
+    clearWatchdog();
+    var scale = timeScale();
+    var rate = state.rate || 1;
+    var expected = (info.len * 0.25 / rate + 3) * 1000 * scale;
+    var silentSince = null;
+    state.watchdog = setInterval(function () {
+      if (info.done || info.seq !== state.seq || state.phase !== 'playing') { clearWatchdog(); return; }
+      var now = Date.now();
+      var el = now - info.startAt;
+      var speaking = false, pending = false;
+      try { speaking = tts.isSpeaking(); pending = tts.isPending(); } catch (e) {}
+      if (speaking) info.speakingSeen = true;
+      if (!speaking && !pending) {
+        if (silentSince === null) silentSince = now;
+      } else {
+        silentSince = null;
+      }
+      if (silentSince !== null && now - silentSince >= 1500 * scale) {
+        // The engine is idle but onend never came.
+        if (!info.started && !info.speakingSeen) return chunkFailed(info, 'nostart');
+        if (info.len >= 30 && (silentSince - info.startAt) < minDuration(info) && state.chunkTry < MAX_RETRY) return chunkFailed(info, 'cut');
+        state.recoveries = (state.recoveries || 0) + 1;
+        showSpeechNote('音声の区切りが届かなかったので、自動で次の文へ進みました（自動で立て直した回数：' + state.recoveries + '回）');
+        return chunkDone(info);
+      }
+      if (el > expected) {
+        if (speaking && el < expected * 2) return; // still talking; allow extra time
+        return chunkFailed(info, 'timeout');
+      }
+    }, 500 * scale);
   }
 
   function finishAll() {
+    clearWatchdog();
     state.phase = 'idle';
     state.itemIndex = 0;
     stopKeepAlive();
@@ -1382,33 +1552,31 @@ window.YOMIAGE_LIB = {
 
   function pauseSpeech() {
     if (state.phase !== 'playing') return;
+    // pause() is unreliable on Android: stop instead and resume from the same chunk.
+    state.seq = (state.seq || 0) + 1;
+    clearWatchdog();
     state.phase = 'paused';
-    tts.pause();
+    try { tts.cancel(); } catch (e) {}
     stopKeepAlive();
+    releaseWakeLock();
     updateButtons();
     savePos();
+    setStatus('一時停止しています。「再生」で同じ文から続けます。');
     $('btn-play').disabled = false;
   }
 
   function resumeSpeech() {
     if (state.phase !== 'paused') return;
-    var speaking = false;
-    try { speaking = tts.isSpeaking() && tts.isPaused(); } catch (e) {}
-    state.phase = 'playing';
-    updateButtons();
-    requestWakeLock();
-    startKeepAlive();
-    if (speaking) {
-      try { tts.resume(); } catch (e) { speakFrom(state.partIndex, state.itemIndex); }
-    } else {
-      speakFrom(state.partIndex, state.itemIndex);
-    }
+    setStatus('読み上げています。画面はつけたままにしてください。');
+    speakFrom(state.partIndex, state.itemIndex);
   }
 
   function stopSpeech(resetToStart) {
+    state.seq = (state.seq || 0) + 1;
+    clearWatchdog();
     state.cancelled = true;
     state.phase = 'idle';
-    tts.cancel();
+    try { tts.cancel(); } catch (e) {}
     stopKeepAlive();
     releaseWakeLock();
     if (resetToStart) {
@@ -1428,14 +1596,14 @@ window.YOMIAGE_LIB = {
       return;
     }
     var voice = await waitForVoices();
-    if (!voice) {
-      var voices = [];
-      try { voices = tts.getVoices() || []; } catch (e) {}
-      if (!voices.length) {
-        // Some browsers report empty but can still speak with lang=ja-JP.
-      } else if (!voice) {
-        setStatus('この端末に日本語の読み上げ音声が見つかりませんでした。Androidの設定で「テキスト読み上げ」の日本語を有効にしてください。そのまま試すこともできます。', true);
-      }
+    var warn = $('voice-warn');
+    var voices = [];
+    try { voices = tts.getVoices() || []; } catch (e) {}
+    if (!voice && voices.length) {
+      warn.textContent = 'この端末に日本語の読み上げ音声が見つかりませんでした。Androidの設定で「テキスト読み上げ」の日本語を有効にしてください。そのまま試すこともできます。';
+      warn.hidden = false;
+    } else {
+      warn.hidden = true;
     }
     pickVoice();
     var p = 0, item = 0;
@@ -1443,6 +1611,8 @@ window.YOMIAGE_LIB = {
       p = state.saved.partIndex || 0;
       item = state.saved.itemIndex || 0;
     }
+    state.recoveries = 0;
+    showSpeechNote('');
     setStatus('読み上げています。画面はつけたままにしてください。');
     speakFrom(p, item);
   }
@@ -1637,7 +1807,11 @@ window.YOMIAGE_LIB = {
 
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible') {
-      if (state.phase === 'playing') requestWakeLock();
+      if (state.phase === 'playing') {
+        requestWakeLock();
+        // If speech died while hidden, the watchdog recovers it; make sure one is running.
+        if (state.cur && !state.cur.done && !state.watchdog) startWatchdog(state.cur);
+      }
     } else if (state.phase === 'playing') {
       // Screen off / app switch: speech often dies on Android. Keep position.
       savePos();

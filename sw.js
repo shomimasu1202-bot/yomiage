@@ -1,5 +1,5 @@
 /* 読み上げくん service worker: caches app files on this origin only. */
-const CACHE = 'yomiage-v2';
+const CACHE = 'yomiage-v3';
 const CORE = [
   './',
   './index.html',
