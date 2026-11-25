@@ -1560,8 +1560,8 @@ window.YOMIAGE_LIB = {
   }
 
   function minDuration(info) {
-    // Fastest plausible Japanese speech is ~16 chars/s at rate 1.
-    return info.len * 60 / (state.rate || 1) * timeScale();
+    // Faster than ~22 chars/s at rate 1 is not real speech: it was cut off.
+    return info.len * 45 / (state.rate || 1) * timeScale();
   }
 
   function trace(ev) {
