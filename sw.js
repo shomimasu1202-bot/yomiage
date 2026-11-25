@@ -29,11 +29,23 @@ self.addEventListener('install', function (event) {
 self.addEventListener('activate', function (event) {
   event.waitUntil(
     caches.keys().then(function (keys) {
-      return Promise.all(keys.filter(function (k) { return k !== CACHE; }).map(function (k) {
+      var old = keys.filter(function (k) { return k !== CACHE; });
+      return Promise.all(old.map(function (k) {
         return caches.delete(k);
-      }));
-    }).then(function () {
-      return self.clients.claim();
+      })).then(function () { return old.length > 0; });
+    }).then(function (upgraded) {
+      return self.clients.claim().then(function () {
+        if (!upgraded) return;
+        // Pages opened with the previous (broken) version: reload them once into the new version.
+        // Do not wait on navigate() here: fetches are held until activation finishes.
+        setTimeout(function () {
+          self.clients.matchAll({ type: 'window' }).then(function (list) {
+            list.forEach(function (c) {
+              try { c.navigate(c.url).catch(function () {}); } catch (e) {}
+            });
+          });
+        }, 300);
+      });
     })
   );
 });
