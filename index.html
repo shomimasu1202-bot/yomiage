@@ -244,7 +244,7 @@
 
   <div class="card">
     <label class="file-btn" id="file-btn" for="file-input">ファイルを選ぶ</label>
-    <input id="file-input" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown,text/x-markdown">
+    <input id="file-input" type="file" accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown,text/x-markdown,application/octet-stream,*/*">
     <label class="toggle">
       <input type="checkbox" id="chk-vertical" checked>
       縦書きの本（スキャンした本）
@@ -313,6 +313,19 @@
   </dialog>
 
 <script>
+(function () {
+  function show(msg) {
+    var el = document.getElementById('status');
+    if (el) { el.textContent = 'うまく動きませんでした：' + msg + '（画面を閉じて開き直してください）'; el.className = 'error'; }
+  }
+  window.addEventListener('error', function (ev) {
+    if (ev && ev.message) show(ev.message);
+  });
+  window.addEventListener('unhandledrejection', function (ev) {
+    var r = ev && ev.reason; show(r && r.message ? r.message : String(r || ''));
+  });
+})();
+window.YOMIAGE_VERSION = '2';
 window.YOMIAGE_LIB = {
   pdfWorker: './vendor/pdf.worker.min.js',
   tessWorker: './vendor/worker.min.js',
@@ -362,7 +375,7 @@ window.YOMIAGE_LIB = {
       return new SpeechSynthesisUtterance(text);
     },
     speak: function (u) { speechSynthesis.speak(u); },
-    cancel: function () { tts.cancel(); },
+    cancel: function () { try { window.speechSynthesis.cancel(); } catch (e) {} },
     pause: function () { try { speechSynthesis.pause(); } catch (e) {} },
     resume: function () { try { speechSynthesis.resume(); } catch (e) {} },
     isSpeaking: function () { try { return !!speechSynthesis.speaking; } catch (e) { return false; } },
@@ -1435,26 +1448,50 @@ window.YOMIAGE_LIB = {
   }
 
   /* ---------- file load ---------- */
-  async function handleFile(file) {
-    if (!file) return;
-    stopSpeech(true);
-    resumeRow.hidden = true;
-    textCard.hidden = true;
-    textView.innerHTML = '';
-    state.loaded = false;
-    state.parts = [];
-    state.pages = [];
-    updateButtons();
-    setProgress(0, 1);
-    setStatus('ファイルを読み込んでいます…');
+  async function isPdfFile(file, lower) {
     try {
-      var name = file.name || 'document';
+      var head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
+      for (var i = 0; i + 4 < head.length; i++) {
+        if (head[i] === 0x25 && head[i + 1] === 0x50 && head[i + 2] === 0x44 && head[i + 3] === 0x46 && head[i + 4] === 0x2D) return true; // %PDF-
+      }
+      return false;
+    } catch (e) {
+      return lower.endsWith('.pdf') || file.type === 'application/pdf';
+    }
+  }
+
+  async function handleFile(file) {
+    if (!file) {
+      setStatus('ファイルが選ばれませんでした。もう一度「ファイルを選ぶ」を押してください。', true);
+      return;
+    }
+    var name = file.name || 'document';
+    setStatus('ファイルを読み込んでいます…（' + name + '）');
+    try {
+      try { stopSpeech(true); } catch (e0) {}
+      resumeRow.hidden = true;
+      textCard.hidden = true;
+      textView.innerHTML = '';
+      state.loaded = false;
+      state.parts = [];
+      state.pages = [];
+      updateButtons();
+      progressWrap.hidden = false;
+      setProgress(0, 1);
+      if (!file.size) throw new Error('ファイルの中身が空です。スマホに保存し直してから選んでください。');
       var lower = name.toLowerCase();
       var pages;
-      if (lower.endsWith('.txt') || lower.endsWith('.md') || (file.type && file.type.indexOf('text/') === 0 && !lower.endsWith('.pdf'))) {
+      var isPdf = await isPdfFile(file, lower);
+      if (!isPdf && /^(image|audio|video)\//.test(file.type || '')) {
+        throw new Error('写真や音声のファイルは読めません。PDF・テキスト・マークダウンのファイルを選んでください。');
+      }
+      if (!isPdf) {
         var buf = await file.arrayBuffer();
+        var nul = new Uint8Array(buf.slice(0, 4096)).indexOf(0);
+        if (nul >= 0 && !/\.(txt|md|markdown)$/.test(lower)) throw new Error('このファイルは読めない形式です。PDF・テキスト・マークダウンのファイルを選んでください。');
         var raw = decodeTextBuffer(buf);
-        if (lower.endsWith('.md')) raw = stripMarkdown(raw);
+        if (lower.endsWith('.md') || lower.endsWith('.markdown') || /markdown/.test(file.type || '')) raw = stripMarkdown(raw);
+        if (!raw.replace(/\s+/g, '')) throw new Error('文字が見つかりませんでした。PDF・テキスト・マークダウンのファイルを選んでください。');
         pages = [{ page: null, text: raw }];
         setProgress(1, 1);
       } else {
@@ -1480,14 +1517,21 @@ window.YOMIAGE_LIB = {
       setTimeout(function () { progressWrap.hidden = true; }, 600);
     } catch (e) {
       progressWrap.hidden = true;
-      setStatus('読み込みに失敗しました。' + (e && e.message ? e.message : ''), true);
+      setStatus('読み込みに失敗しました。' + (e && e.message ? e.message : String(e || '')), true);
     }
   }
 
   /* ---------- events ---------- */
   fileInput.addEventListener('change', function () {
     var f = fileInput.files && fileInput.files[0];
-    handleFile(f);
+    var p = handleFile(f);
+    if (p && typeof p.then === 'function') {
+      p.catch(function (e) { setStatus('読み込みに失敗しました。' + (e && e.message ? e.message : ''), true); })
+       .then(function () { try { fileInput.value = ''; } catch (e) {} });
+    }
+  });
+  fileInput.addEventListener('click', function () {
+    setStatus('ファイルを選んでください。');
   });
   $('btn-play').addEventListener('click', function () { startPlay(false); });
   $('btn-resume').addEventListener('click', function () { startPlay(true); });
@@ -1656,7 +1700,9 @@ window.YOMIAGE_LIB = {
 <script src="./vendor/tesseract.min.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch(function () {});
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(function (reg) {
+    try { reg.update(); } catch (e) {}
+  }).catch(function () {});
 }
 </script>
 </body>

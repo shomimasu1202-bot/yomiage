@@ -1,5 +1,5 @@
 /* 読み上げくん service worker: caches app files on this origin only. */
-const CACHE = 'yomiage-v1';
+const CACHE = 'yomiage-v2';
 const CORE = [
   './',
   './index.html',
@@ -19,7 +19,7 @@ const CORE = [
 self.addEventListener('install', function (event) {
   event.waitUntil(
     caches.open(CACHE).then(function (cache) {
-      return cache.addAll(CORE);
+      return cache.addAll(CORE.map(function (u) { return new Request(u, { cache: 'reload' }); }));
     }).then(function () {
       return self.skipWaiting();
     })
@@ -46,7 +46,7 @@ self.addEventListener('fetch', function (event) {
   var isHtml = url.pathname === '/' || url.pathname.endsWith('/') || url.pathname.endsWith('.html');
   if (isHtml) {
     event.respondWith(
-      fetch(event.request).then(function (res) {
+      fetch(event.request, { cache: 'no-store' }).then(function (res) {
         if (res && res.ok) {
           var copy = res.clone();
           caches.open(CACHE).then(function (c) { c.put(event.request, copy); });
