@@ -114,6 +114,16 @@
     background: var(--play);
     font-size: 1.15rem;
   }
+  #shelf-card h2, #add-card h2 { margin: 0 0 10px; font-size: 1.3rem; }
+  .book { border: 2px solid var(--line); border-radius: 12px; padding: 12px; margin: 0 0 12px; background: #fffdf8; }
+  .book.current { border-color: var(--play); }
+  .book-title { font-size: 1.25rem; font-weight: 700; margin: 0 0 4px; word-break: break-all; }
+  .book-progress { font-size: 1.1rem; margin: 0 0 6px; }
+  .book-meta { font-size: .9rem; color: var(--muted); margin: 0 0 6px; }
+  .book .row > button { min-height: 60px; font-size: 1.15rem; }
+  .book .row > button.small { flex: 1 1 22%; font-size: 1rem; }
+  .book .row > button.big { flex: 2 1 100%; }
+  #shelf-usage { font-size: .9rem; color: var(--muted); margin: 4px 0 0; }
   #file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .toggle {
     display: flex;
@@ -238,11 +248,18 @@
 </head>
 <body>
   <h1>読み上げくん</h1>
-  <p class="lead">ファイルを選ぶと、最後まで読み上げます。<br>文書はスマホの中だけで処理し、外には送りません。</p>
+  <p class="lead">ファイルを選ぶと、最後まで読み上げます。一度読み込んだ本は「本棚」に残るので、次からは選び直さずに続きから聴けます。<br>文書はスマホの中だけに保存し、外には送りません。</p>
 
   <p class="notice" id="lib-error">読み込みに失敗しました。インターネットにつながる場所で、もう一度開いてください。</p>
 
-  <div class="card">
+  <div class="card" id="shelf-card" hidden>
+    <h2>本棚（保存した本）</h2>
+    <div id="shelf-list"></div>
+    <p id="shelf-usage"></p>
+  </div>
+
+  <div class="card" id="add-card">
+    <h2 id="add-title">本を読み込む</h2>
     <label class="file-btn" id="file-btn" for="file-input">ファイルを選ぶ</label>
     <input id="file-input" type="file" accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown,text/x-markdown,application/octet-stream,*/*">
     <label class="toggle">
@@ -327,7 +344,7 @@
     var r = ev && ev.reason; show(r && r.message ? r.message : String(r || ''));
   });
 })();
-window.YOMIAGE_VERSION = '4';
+window.YOMIAGE_VERSION = '5';
 window.YOMIAGE_LIB = {
   pdfWorker: './vendor/pdf.worker.min.js',
   tessWorker: './vendor/worker.min.js',
@@ -479,14 +496,17 @@ window.YOMIAGE_LIB = {
 
   function savePos() {
     if (!state.currentFileKey) return;
+    state.saved = { partIndex: state.partIndex, itemIndex: state.itemIndex, rate: state.rate, finished: !!state.finished, ts: Date.now() };
     try {
       localStorage.setItem(state.currentFileKey, JSON.stringify({
         partIndex: state.partIndex,
         itemIndex: state.itemIndex,
         rate: state.rate,
+        finished: !!state.finished,
         ts: Date.now()
       }));
     } catch (e) {}
+    try { if (typeof shelfSavePos === 'function') shelfSavePos(); } catch (e2) {}
   }
 
   /* ---------- text helpers ---------- */
@@ -514,7 +534,7 @@ window.YOMIAGE_LIB = {
         /^(第[0-9０-９一二三四五六七八九十百]+[章節部回条]|[0-9０-９]+[\.．、])/.test(line) || // heading / numbered line
         (prevLine.length < SHORT_SENTENCE && cur === prevLine.join('') &&            // a short first line of a block
          ENDERS.indexOf(lastCh) < 0 && CLOSERS.indexOf(lastCh) < 0 &&
-         'をはがのにへでともやかよね、，'.indexOf(lastCh) < 0);                       // ...that doesn't end mid-sentence: heading
+         'をはがのにへでともやかよね、，'.indexOf(lastCh) < 0 && !/[0-9０-９A-Za-z]/.test(lastCh));                       // ...that doesn't end mid-sentence: heading
       if (hardBreak) { flush(); cur = line; continue; }
       var a = lastCh, b = line.charAt(0);
       var space = /[A-Za-z0-9,;:]/.test(a) && /[A-Za-z0-9]/.test(b) ? ' ' : '';
@@ -880,7 +900,7 @@ window.YOMIAGE_LIB = {
       resumeRow.hidden = true;
       return;
     }
-    if (s.partIndex === 0 && (!s.itemIndex || s.itemIndex <= 0)) {
+    if (s.finished || (s.partIndex === 0 && (!s.itemIndex || s.itemIndex <= 0))) {
       resumeRow.hidden = true;
       return;
     }
@@ -913,7 +933,8 @@ window.YOMIAGE_LIB = {
         var ly = last.transform ? last.transform[5] : 0;
         var x = it.transform ? it.transform[4] : 0;
         var lx = last.transform ? last.transform[4] + (last.width || 0) : 0;
-        var sameLine = Math.abs(y - ly) < 3;
+        var fh = Math.abs((it.transform && it.transform[3]) || (last.transform && last.transform[3]) || 10);
+        var sameLine = Math.abs(y - ly) < Math.max(3, fh * 0.5) && x >= lx - fh;  // tolerate baseline shifts of digits/fallback fonts
         if (!sameLine || it.hasEOL) out += '\n';
         else if (x - lx > 1.2) {
           var a = last.str ? last.str.slice(-1) : '';
@@ -1334,6 +1355,7 @@ window.YOMIAGE_LIB = {
     state.fileSize = fileSize;
     state.currentFileKey = storeKey(fileName, fileSize);
     state.saved = loadSaved(fileName, fileSize);
+    state.finished = !!(state.saved && state.saved.finished);
     state.loaded = state.parts.length > 0;
     renderText();
     updateNowPlaying();
@@ -1621,6 +1643,7 @@ window.YOMIAGE_LIB = {
   function finishAll() {
     clearWatchdog();
     state.phase = 'idle';
+    state.finished = true;
     state.itemIndex = 0;
     stopKeepAlive();
     releaseWakeLock();
@@ -1694,6 +1717,8 @@ window.YOMIAGE_LIB = {
       p = state.saved.partIndex || 0;
       item = state.saved.itemIndex || 0;
     }
+    if (!fromSaved || (state.saved && state.saved.finished)) { p = fromSaved ? 0 : p; item = fromSaved ? 0 : item; }
+    state.finished = false;
     state.recoveries = 0;
     showSpeechNote('');
     setStatus('読み上げています。画面はつけたままにしてください。');
@@ -1721,7 +1746,12 @@ window.YOMIAGE_LIB = {
     var name = file.name || 'document';
     setStatus('ファイルを読み込んでいます…（' + name + '）');
     try {
-      try { stopSpeech(true); } catch (e0) {}
+      try { stopSpeech(false); } catch (e0) {}
+      state.currentFileKey = '';   // never overwrite the previous book's position
+      state.bookId = null;
+      state.partIndex = 0;
+      state.itemIndex = 0;
+      highlight(-1, -1);
       resumeRow.hidden = true;
       textCard.hidden = true;
       textView.innerHTML = '';
@@ -1734,6 +1764,16 @@ window.YOMIAGE_LIB = {
       if (!file.size) throw new Error('ファイルの中身が空です。スマホに保存し直してから選んでください。');
       var lower = name.toLowerCase();
       var pages;
+      var fileHash = await hashFile(file);
+      var existing = await shelfFind(name, file.size || 0, fileHash);
+      if (existing) {
+        var ok = await openBook(existing, { quiet: true });
+        if (ok) {
+          progressWrap.hidden = true;
+          setStatus('この本は本棚に保存してあったので、読み込み直さずに開きました。' + resumeHint());
+          return;
+        }
+      }
       var isPdf = await isPdfFile(file, lower);
       if (!isPdf && /^(image|audio|video)\//.test(file.type || '')) {
         throw new Error('写真や音声のファイルは読めません。PDF・テキスト・マークダウンのファイルを選んでください。');
@@ -1766,11 +1806,275 @@ window.YOMIAGE_LIB = {
         }
         setProgress(result.numPages, result.numPages);
       }
+      var keepMsg = statusEl.className !== 'error' && /ページは読み取れませんでした/.test(statusEl.textContent) ? statusEl.textContent : '';
       applyPages(pages, name, file.size || 0);
+      if (keepMsg) setStatus(keepMsg);
+      await shelfAddCurrent(fileHash);
       setTimeout(function () { progressWrap.hidden = true; }, 600);
     } catch (e) {
       progressWrap.hidden = true;
       setStatus('読み込みに失敗しました。' + (e && e.message ? e.message : String(e || '')), true);
+    }
+  }
+
+  /* ---------- 本棚 (on-device library, IndexedDB; nothing leaves the phone) ---------- */
+  var DB_NAME = 'yomiage-shelf';
+  var dbPromise = null;
+  function openDb() {
+    if (dbPromise) return dbPromise;
+    dbPromise = new Promise(function (resolve, reject) {
+      if (!('indexedDB' in window)) return reject(new Error('no-idb'));
+      var req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains('books')) {
+          var b = db.createObjectStore('books', { keyPath: 'id' });
+          b.createIndex('hash', 'hash', { unique: false });
+        }
+        if (!db.objectStoreNames.contains('texts')) db.createObjectStore('texts', { keyPath: 'id' });
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+    dbPromise.catch(function () { dbPromise = null; });
+    return dbPromise;
+  }
+  function idb(storeNames, mode, fn) {
+    return openDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(storeNames, mode);
+        var out;
+        tx.oncomplete = function () { resolve(out); };
+        tx.onerror = function () { reject(tx.error); };
+        tx.onabort = function () { reject(tx.error || new Error('abort')); };
+        out = fn(tx);
+      });
+    });
+  }
+  function reqP(r) { return new Promise(function (res, rej) { r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); }
+  function shelfAll() {
+    var list = [];
+    return idb(['books'], 'readonly', function (tx) {
+      tx.objectStore('books').openCursor().onsuccess = function (ev) {
+        var c = ev.target.result;
+        if (c) { list.push(c.value); c.continue(); }
+      };
+    }).then(function () {
+      list.sort(function (a, b) { return (b.lastOpened || 0) - (a.lastOpened || 0); });
+      return list;
+    }).catch(function () { return []; });
+  }
+  function shelfGet(id) {
+    var rec = null, txt = null;
+    return idb(['books', 'texts'], 'readonly', function (tx) {
+      reqP(tx.objectStore('books').get(id)).then(function (r) { rec = r || null; });
+      reqP(tx.objectStore('texts').get(id)).then(function (r) { txt = r || null; });
+    }).then(function () { if (rec && txt) rec.pages = txt.pages; return rec && txt ? rec : null; })
+      .catch(function () { return null; });
+  }
+  async function hashFile(file) {
+    try {
+      if (!window.crypto || !crypto.subtle) return '';
+      var buf = await file.arrayBuffer();
+      var d = await crypto.subtle.digest('SHA-256', buf);
+      return Array.from(new Uint8Array(d)).map(function (x) { return x.toString(16).padStart(2, '0'); }).join('');
+    } catch (e) { return ''; }
+  }
+  async function shelfFind(name, size, hash) {
+    var all = await shelfAll();
+    var hit = all.filter(function (b) { return b.name === name && b.size === size; })[0] ||
+              (hash ? all.filter(function (b) { return b.hash && b.hash === hash; })[0] : null);
+    return hit ? shelfGet(hit.id) : null;
+  }
+  function quotaMsg(e) {
+    var q = e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
+    return q ? 'スマホの保存できる量がいっぱいのため、本棚に保存できませんでした。本棚の使わない本を「削除」してから、もう一度ファイルを選んでください。（読み上げはこのまま使えます）'
+             : '本棚への保存に失敗しました。読み上げはこのまま使えます。';
+  }
+  function sentTotal() { return state.parts.reduce(function (a, p) { return a + p.sentences.length; }, 0); }
+  function heardCount() {
+    if (state.finished) return sentTotal();
+    var pos = chunkPosition();
+    return pos ? Math.max(0, pos.n - 1) : 0;
+  }
+  function resumeHint() {
+    var s = state.saved;
+    if (!s || s.finished || (!s.partIndex && !s.itemIndex)) return '「再生」を押すと最初から読み上げます。';
+    return '「続きから再生」を1回押すと、前に止めたところから聴けます。';
+  }
+  var persistAsked = false;
+  function askPersist() {
+    if (persistAsked) return;
+    persistAsked = true;
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {}); } catch (e) {}
+  }
+  async function shelfAddCurrent(hash) {
+    if (!state.loaded) return;
+    var now = Date.now();
+    var id = 'b' + now.toString(36) + Math.random().toString(36).slice(2, 6);
+    var title = String(state.fileName || '本').replace(/\.(pdf|txt|md|markdown)$/i, '');
+    var pos = state.saved || { partIndex: 0, itemIndex: 0 };   // migrates an old localStorage position
+    var rec = {
+      id: id, hash: hash || '', name: state.fileName, size: state.fileSize, title: title,
+      chars: state.pages.reduce(function (a, p) { return a + (p.text || '').length; }, 0),
+      pageCount: state.pages.length, added: now, lastOpened: now,
+      pos: { partIndex: pos.partIndex || 0, itemIndex: pos.itemIndex || 0, rate: pos.rate || state.rate, finished: !!pos.finished, ts: now },
+      sentTotal: sentTotal(), heard: 0
+    };
+    try {
+      await idb(['books', 'texts'], 'readwrite', function (tx) {
+        tx.objectStore('books').put(rec);
+        tx.objectStore('texts').put({ id: id, pages: state.pages });
+      });
+      state.bookId = id;
+      askPersist();
+      setStatus(statusEl.textContent + '　本棚に保存しました。次からは選び直さなくても、本棚から続きを聴けます。');
+    } catch (e) {
+      setStatus(quotaMsg(e), true);
+    }
+    renderShelf();
+  }
+  function shelfUpdateText(id, pages) {
+    return idb(['books', 'texts'], 'readwrite', function (tx) {
+      var st = tx.objectStore('books');
+      reqP(st.get(id)).then(function (rec) {
+        if (!rec) return;
+        rec.chars = pages.reduce(function (a, p) { return a + (p.text || '').length; }, 0);
+        rec.sentTotal = sentTotal();
+        st.put(rec);
+      });
+      tx.objectStore('texts').put({ id: id, pages: pages });
+    }).then(renderShelf).catch(function (e) { setStatus(quotaMsg(e), true); });
+  }
+  var posTimers = {};
+  function shelfSavePos() {
+    if (!state.bookId) return;
+    var id = state.bookId;
+    var pos = { partIndex: state.partIndex, itemIndex: state.itemIndex, rate: state.rate, finished: !!state.finished, ts: Date.now() };
+    var heard = heardCount(), total = sentTotal();
+    clearTimeout(posTimers[id]);
+    posTimers[id] = setTimeout(function () {
+      delete posTimers[id];
+      idb(['books'], 'readwrite', function (tx) {
+        var st = tx.objectStore('books');
+        reqP(st.get(id)).then(function (rec) {
+          if (!rec) return;
+          rec.pos = pos; rec.heard = heard; rec.sentTotal = total; rec.lastOpened = Date.now();
+          st.put(rec);
+        });
+      }).then(function () { if (state.phase !== 'playing') renderShelf(); }).catch(function () {});
+    }, state.phase === 'playing' ? 800 : 50);
+  }
+  async function openBook(rec, opts) {
+    opts = opts || {};
+    if (!rec || !rec.pages) rec = rec && await shelfGet(rec.id);
+    if (!rec || !rec.pages) { setStatus('本棚の本を開けませんでした。もう一度ファイルを選んでください。', true); return false; }
+    try { stopSpeech(false); } catch (e) {}
+    state.currentFileKey = '';
+    applyPages(rec.pages, rec.name, rec.size);
+    state.bookId = rec.id;
+    var ls = state.saved;
+    if (rec.pos && (!ls || (rec.pos.ts || 0) >= (ls.ts || 0))) state.saved = rec.pos;
+    state.finished = !!(state.saved && state.saved.finished);
+    if (state.saved && state.saved.rate) { state.rate = state.saved.rate; speedInput.value = state.rate; speedLabel.textContent = state.rate.toFixed(1); }
+    if (state.saved && !state.finished) { state.partIndex = Math.min(state.saved.partIndex || 0, state.parts.length - 1); state.itemIndex = state.saved.itemIndex || 0; }
+    updateNowPlaying();
+    showResumeIfAny();
+    if (!opts.quiet) setStatus('「' + rec.title + '」を本棚から開きました。' + resumeHint());
+    idb(['books'], 'readwrite', function (tx) {
+      var st = tx.objectStore('books');
+      reqP(st.get(rec.id)).then(function (r) { if (r) { r.lastOpened = Date.now(); st.put(r); } });
+    }).then(renderShelf).catch(function () {});
+    return true;
+  }
+  async function deleteBook(rec) {
+    if (!window.confirm('「' + rec.title + '」を本棚から削除しますか？\n（スマホに入っている元のファイルは消えません）')) return;
+    try {
+      await idb(['books', 'texts'], 'readwrite', function (tx) {
+        tx.objectStore('books').delete(rec.id);
+        tx.objectStore('texts').delete(rec.id);
+      });
+      try { localStorage.removeItem(storeKey(rec.name, rec.size)); } catch (e) {}
+      if (state.bookId === rec.id) {
+        stopSpeech(false);
+        state.bookId = null; state.currentFileKey = ''; state.parts = []; state.pages = []; state.loaded = false;
+        textCard.hidden = true; textView.innerHTML = ''; resumeRow.hidden = true;
+        updateNowPlaying(); updateButtons();
+      }
+      setStatus('「' + rec.title + '」を本棚から削除しました。');
+    } catch (e) {
+      setStatus('削除できませんでした。もう一度お試しください。', true);
+    }
+    renderShelf();
+  }
+  async function renameBook(rec) {
+    var t = window.prompt('本の名前を入力してください', rec.title);
+    if (t == null) return;
+    t = t.replace(/^\s+|\s+$/g, '');
+    if (!t) return;
+    await idb(['books'], 'readwrite', function (tx) {
+      var st = tx.objectStore('books');
+      reqP(st.get(rec.id)).then(function (r) { if (r) { r.title = t; st.put(r); } });
+    }).catch(function () {});
+    renderShelf();
+  }
+  function progressText(b) {
+    var total = b.sentTotal || 0;
+    if (b.pos && b.pos.finished) return '最後まで聞きました（100%）';
+    var heard = Math.min(b.heard || 0, total);
+    if (!heard) return (b.pos && (b.pos.partIndex || b.pos.itemIndex)) ? '1文目の途中まで聞いた（0%）' : 'まだ聞いていません（全' + total + '文）';
+    return heard + '文目まで聞いた（' + Math.floor(heard * 100 / Math.max(1, total)) + '%）';
+  }
+  function fmtDate(t) { var d = new Date(t); return (d.getMonth() + 1) + '月' + d.getDate() + '日'; }
+  async function renderShelf() {
+    var list = await shelfAll();
+    var card = $('shelf-card'), box = $('shelf-list');
+    card.hidden = !list.length;
+    $('add-title').textContent = list.length ? '新しい本を読み込む' : '本を読み込む';
+    box.innerHTML = '';
+    list.forEach(function (b) {
+      var el = document.createElement('div');
+      el.className = 'book' + (b.id === state.bookId ? ' current' : '');
+      el.setAttribute('data-book', b.id);
+      var h = document.createElement('p'); h.className = 'book-title'; h.textContent = (b.id === state.bookId ? '▶ ' : '') + b.title;
+      var pr = document.createElement('p'); pr.className = 'book-progress'; pr.textContent = progressText(b);
+      var mt = document.createElement('p'); mt.className = 'book-meta';
+      mt.textContent = '約' + (b.chars || 0).toLocaleString('ja-JP') + '文字・' + fmtDate(b.added) + 'に追加';
+      var row = document.createElement('div'); row.className = 'row';
+      var play = document.createElement('button'); play.type = 'button'; play.className = 'play big';
+      var fin = b.pos && b.pos.finished, fresh = !b.heard && !(b.pos && (b.pos.partIndex || b.pos.itemIndex));
+      play.textContent = fin ? '最初から聴く' : fresh ? '聴く' : '続きから聴く';
+      play.addEventListener('click', async function () {
+        var ok = (state.bookId === b.id && state.loaded) ? true : await openBook(b);
+        if (!ok) return;
+        if (fin) { state.saved = { partIndex: 0, itemIndex: 0 }; state.finished = false; startPlay(false); }
+        else startPlay(true);
+      });
+      var ren = document.createElement('button'); ren.type = 'button'; ren.className = 'ghost small'; ren.textContent = '名前を変える';
+      ren.addEventListener('click', function () { renameBook(b); });
+      var del = document.createElement('button'); del.type = 'button'; del.className = 'stop small'; del.textContent = '削除';
+      del.addEventListener('click', function () { deleteBook(b); });
+      row.appendChild(play); row.appendChild(ren); row.appendChild(del);
+      el.appendChild(h); el.appendChild(pr); el.appendChild(mt); el.appendChild(row);
+      box.appendChild(el);
+    });
+    var u = $('shelf-usage');
+    u.textContent = '';
+    try {
+      if (navigator.storage && navigator.storage.estimate && list.length) {
+        var est = await navigator.storage.estimate();
+        var books = list.reduce(function (a, b) { return a + (b.chars || 0) * 3; }, 0);
+        u.textContent = '本棚：' + list.length + '冊（本文 約' + (books < 104858 ? '0.1MB未満' : (books / 1048576).toFixed(1) + 'MB') + '）・このアプリ全体の保存量 約' +
+          Math.round((est.usage || 0) / 1048576) + 'MB。本はスマホの中だけに保存しています。';
+      }
+    } catch (e) {}
+  }
+  async function initShelf() {
+    var list = await shelfAll();
+    await renderShelf();
+    if (list.length && !state.loaded) {
+      var ok = await openBook(list[0], { quiet: true });
+      if (ok) setStatus('前回の本「' + list[0].title + '」を開きました。' + resumeHint());
     }
   }
 
@@ -1786,7 +2090,11 @@ window.YOMIAGE_LIB = {
   fileInput.addEventListener('click', function () {
     setStatus('ファイルを選んでください。');
   });
-  $('btn-play').addEventListener('click', function () { startPlay(false); });
+  $('btn-play').addEventListener('click', function () {
+    // 再生 continues from where the book was left (「最初から」 starts over).
+    var s = state.saved;
+    startPlay(!!(state.phase !== 'paused' && s && !s.finished && (s.partIndex || s.itemIndex)));
+  });
   $('btn-resume').addEventListener('click', function () { startPlay(true); });
   $('btn-from-start').addEventListener('click', function () {
     state.saved = { partIndex: 0, itemIndex: 0 };
@@ -1877,7 +2185,10 @@ window.YOMIAGE_LIB = {
       setStatus('本文が空です。直してから、もう一度反映してください。', true);
       return;
     }
+    var keepId = state.bookId;
     applyPages(pages, state.fileName || 'edited.txt', state.fileSize || 0);
+    state.bookId = keepId;
+    if (keepId) shelfUpdateText(keepId, pages);
     showEditor(false);
     setStatus('本文の直しを反映しました。内容を確認して、「再生」を押してください。');
   });
@@ -1921,7 +2232,12 @@ window.YOMIAGE_LIB = {
     setTimeout(checkLibs, 400);
   });
 
+  initShelf();
+
   window.__yomiage = {
+    shelfAll: shelfAll,
+    openBook: openBook,
+    renderShelf: renderShelf,
     splitSentences: splitSentences,
     splitParts: splitParts,
     buildUtterances: buildUtterances,
