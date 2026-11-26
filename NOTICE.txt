@@ -7,5 +7,11 @@
 - OpenCV.js via @techstark/opencv-js (Apache-2.0) https://opencv.org
 - clipper-lib (Boost / BSL-1.0)
 - js-yaml (MIT)
+- openjtalkjs WebAssembly build (BSD-3-Clause) https://github.com/keanu-thakalath/openjtalkjs  (wrapper modified: vendor/ojt1/ojt-core.js)
+- Open JTalk (Modified BSD) https://open-jtalk.sourceforge.net/
+- HTS Engine API (Modified BSD) https://hts-engine.sourceforge.net/
+- NAIST Japanese Dictionary for Open JTalk (BSD) 
+- HTS voice "Mei" by the MMDAgent Project Team, Nagoya Institute of Technology (CC BY 3.0) http://www.mmdagent.jp/
+  License texts: vendor/ojt1/
 
 Documents you open in this app are processed only in your browser and are not sent to a server.

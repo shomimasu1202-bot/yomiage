@@ -231,6 +231,13 @@
   }
   #part-list button.active { background: var(--current); }
   .error { color: var(--stop); font-weight: 700; }
+  .mode-card h2 { margin: 0 0 8px; font-size: 1.2rem; }
+  .mode-opt { display: flex; gap: 12px; align-items: flex-start; border: 2px solid var(--line); border-radius: 12px; padding: 12px; margin: 0 0 10px; background: #fffdf8; font-size: 1.05rem; }
+  .mode-opt.on { border-color: var(--play); background: #eef6f0; }
+  .mode-opt input { width: 26px; height: 26px; margin-top: 2px; accent-color: var(--play); flex: none; }
+  .mode-opt b { display: block; font-size: 1.12rem; }
+  .mode-opt small { display: block; color: var(--muted); font-size: .92rem; }
+  #voice-prep { font-weight: 700; color: var(--btn); }
   #lib-error { display: none; }
   #text-editor {
     width: 100%;
@@ -269,7 +276,13 @@
     <p class="hint">紙の本を撮影したPDFや、文字が入っていないスキャンは、上のチェックを入れたまま選んでください。文字が入っているPDFや、普通のテキスト、ボットが作った .txt はそのままで大丈夫です。</p>
   </div>
 
-  <p class="notice">読み上げ中に画面が消えると、途中で止まります。画面をつけたままにするか、設定の「画面消灯」を「しない」にしてください。</p>
+  <div class="card mode-card" id="mode-card">
+    <h2>読み上げの声</h2>
+    <label class="mode-opt" id="mode-opt-bg"><input type="radio" name="mode" value="bg" id="mode-bg"><span><b>画面を消しても聴ける声（おすすめ）</b><small>画面を消しても、ほかのアプリを開いても続きます。ロック画面のボタンで止めたり再開したりできます。初めての時だけ声のデータ（約25MB）を読み込みます。</small></span></label>
+    <label class="mode-opt" id="mode-opt-speech"><input type="radio" name="mode" value="speech" id="mode-speech"><span><b>スマホの声（画面をつけたまま）</b><small>これまでの声です。画面が消えると止まるので、画面をつけたままにしてください。</small></span></label>
+  </div>
+
+  <p class="notice" id="mode-notice">読み上げ中に画面が消えると、途中で止まります。画面をつけたままにするか、設定の「画面消灯」を「しない」にしてください。</p>
 
   <div class="card" id="work-card">
     <p id="status">ファイルを選ぶと、ここに本文が表示されます。</p>
@@ -279,6 +292,8 @@
     <p id="now-playing" hidden></p>
     <p class="error" id="voice-warn" hidden></p>
     <p id="speech-note" hidden></p>
+    <p id="voice-prep" hidden></p>
+    <audio id="player" preload="auto" hidden></audio>
     <div class="row" id="resume-row" hidden>
       <button type="button" class="play" id="btn-resume">続きから再生</button>
       <button type="button" class="ghost" id="btn-from-start">最初から</button>
@@ -319,8 +334,10 @@
       <li>本文が画面に出たら、最後まで入っているか確認できます。間違いがあれば「本文を直す」で直せます。</li>
       <li>「再生」を押すと、頭から最後まで読み上げます。途中で止まったときに迷わないよう、各回の最初に「その1、全4回中。○ページから」と案内し、終わりにも「その1、全4回の終わりです」と言います。</li>
       <li>「一時停止」で休めます。「前の回」「次の回」「パート一覧」で聞きたいところへ移れます。</li>
-      <li>画面が消えると読み上げが止まります。読み上げ中は画面をつけたままにしてください。</li>
-      <li>途中で閉じてしまっても、同じファイルをもう一度選べば「続きから再生」が使えます。</li>
+      <li>「画面を消しても聴ける声」を選ぶと、画面を消しても、ほかのアプリを開いても読み上げが続きます。ロック画面や通知に出る ▶（再生）・‖（一時停止）・⏮（前の文）・⏭（次の文）でも操作できます。「スマホの声」を選んだときは、画面をつけたままにしてください。</li>
+      <li>画面を消して聴くときに途中で止まる場合は、スマホの「設定」→「アプリ」→「Chrome」→「アプリのバッテリー使用量」を「制限なし」にしてください。</li>
+      <li>読み方がおかしい言葉は、「本文を直す」でその言葉をひらがなに書き換えると、正しく読みます。</li>
+      <li>途中で閉じてしまっても、本棚の「続きから聴く」で続きから聴けます。文字起こしの途中で閉じたときも、同じファイルをもう一度選べば、終わったページの続きから再開します。</li>
     </ol>
     <p class="hint">縦書きの本文だけのページは、かなり正確に取れます。図が多いページや、影・指・ページをまたぐ文では、まだ間違えることがあります。もっと正確に取りたいときは、このボットにPDFを送って全文の文字起こしをしてもらい、できたテキストをここで開く方法が確実です。スマホの「Googleレンズ」で文字をコピーして貼り付ける方法もあります。このアプリは文書の中身をインターネットに送りません。文字起こしとPDF表示の仕組みは、この同じサイトから読み込みます。</p>
   </details>
@@ -344,7 +361,7 @@
     var r = ev && ev.reason; show(r && r.message ? r.message : String(r || ''));
   });
 })();
-window.YOMIAGE_VERSION = '5';
+window.YOMIAGE_VERSION = '6';
 window.YOMIAGE_LIB = {
   pdfWorker: './vendor/pdf.worker.min.js',
   tessWorker: './vendor/worker.min.js',
@@ -353,7 +370,8 @@ window.YOMIAGE_LIB = {
   paddleModule: './vendor/paddleocr.mjs',
   paddleDet: './vendor/models/PP-OCRv6_small_det_onnx_infer.tar',
   paddleRec: './vendor/models/PP-OCRv6_small_rec_onnx_infer.tar',
-  ortWasmPaths: './vendor/ort/'
+  ortWasmPaths: './vendor/ort/',
+  ttsWorker: './vendor/ojt1/tts-worker.js'
 };
 </script>
 <script>
@@ -1298,7 +1316,8 @@ window.YOMIAGE_LIB = {
     return postCorrectOcr(text);
   }
 
-  async function extractPdf(file, vertical, onProgress) {
+  async function extractPdf(file, vertical, onProgress, resume) {
+    resume = resume || {};
     if (!pdfLibsReady()) throw new Error('PDFの仕組みを読み込めませんでした。');
     pdfjsLib.GlobalWorkerOptions.workerSrc = LIB.pdfWorker;
     var buf = await file.arrayBuffer();
@@ -1307,6 +1326,13 @@ window.YOMIAGE_LIB = {
     var n = doc.numPages;
     var usedOcr = false;
     for (var i = 1; i <= n; i++) {
+      var donePage = resume.pages && resume.pages[i - 1];
+      if (donePage && donePage.page === i) {
+        // Already read before the app was closed: keep it, do not read it again.
+        if (donePage.ocr) usedOcr = true;
+        pages.push(donePage);
+        continue;
+      }
       if (onProgress) onProgress(i, n, 'text');
       var page = await doc.getPage(i);
       var tc = await page.getTextContent();
@@ -1332,8 +1358,10 @@ window.YOMIAGE_LIB = {
       pages.push({
         page: i,
         text: text || '',
-        ocrFailed: !text
+        ocrFailed: !text,
+        ocr: compact.length < TEXT_LAYER_MIN
       });
+      if (resume.onPage) { try { await resume.onPage(pages, n); } catch (e) {} }
     }
     try { await doc.destroy(); } catch (e) {}
     if (state.tessWorker) {
@@ -1408,7 +1436,7 @@ window.YOMIAGE_LIB = {
       state.wakeLock = await navigator.wakeLock.request('screen');
       state.wakeLock.addEventListener('release', function () {
         state.wakeLock = null;
-        if (state.phase === 'playing' && document.visibilityState === 'visible') {
+        if (((state.phase === 'playing' && !isBg()) || state.ocrBusy) && document.visibilityState === 'visible') {
           setTimeout(requestWakeLock, 500);
         }
       });
@@ -1480,6 +1508,24 @@ window.YOMIAGE_LIB = {
   function speakFrom(partIndex, itemIndex) {
     if (!state.parts.length) return;
     if (partIndex < 0 || partIndex >= state.parts.length) return;
+    if (isBg()) {
+      state.seq = (state.seq || 0) + 1;
+      clearWatchdog();
+      state.cancelled = true;
+      try { tts.cancel(); } catch (e) {}
+      state.cancelled = false;
+      state.partIndex = partIndex;
+      state.itemIndex = Math.max(0, itemIndex || 0);
+      state.phase = 'playing';
+      updateNowPlaying();
+      updateButtons();
+      savePos();
+      releaseWakeLock();   // the screen may turn off in this mode
+      bgPlayFrom(state.partIndex, state.itemIndex);
+      bgMediaMeta();
+      return;
+    }
+    bgStop();
     state.seq = (state.seq || 0) + 1;
     clearWatchdog();
     state.cancelled = true;
@@ -1647,6 +1693,7 @@ window.YOMIAGE_LIB = {
     state.itemIndex = 0;
     stopKeepAlive();
     releaseWakeLock();
+    try { bgStop(); } catch (e) {}
     highlight(-1, -1);
     updateButtons();
     savePos();
@@ -1658,6 +1705,15 @@ window.YOMIAGE_LIB = {
 
   function pauseSpeech() {
     if (state.phase !== 'playing') return;
+    if (isBg()) {
+      state.phase = 'paused';
+      bgPause();
+      updateButtons();
+      savePos();
+      setStatus('一時停止しています。「再生」で同じところから続けます。');
+      $('btn-play').disabled = false;
+      return;
+    }
     // pause() is unreliable on Android: stop instead and resume from the same chunk.
     state.seq = (state.seq || 0) + 1;
     clearWatchdog();
@@ -1673,6 +1729,10 @@ window.YOMIAGE_LIB = {
 
   function resumeSpeech() {
     if (state.phase !== 'paused') return;
+    if (isBg()) {
+      if (!bgResume()) speakFrom(state.partIndex, state.itemIndex);
+      return;
+    }
     setStatus('読み上げています。画面はつけたままにしてください。');
     speakFrom(state.partIndex, state.itemIndex);
   }
@@ -1683,6 +1743,7 @@ window.YOMIAGE_LIB = {
     state.cancelled = true;
     state.phase = 'idle';
     try { tts.cancel(); } catch (e) {}
+    try { bgStop(); } catch (e) {}
     stopKeepAlive();
     releaseWakeLock();
     if (resetToStart) {
@@ -1695,14 +1756,395 @@ window.YOMIAGE_LIB = {
     savePos();
   }
 
+  /* ---------- 画面を消しても聴けるモード (on-device voice -> <audio>, keeps playing with the screen off) ----------
+   * The phone itself turns text into sound (Open JTalk + voice "Mei", in a worker). The sound is played through an
+   * <audio> element with Media Session, which Android keeps playing when the screen is off or another app is opened.
+   * Nothing is sent outside the phone: the voice data is only downloaded once from this site.
+   */
+  var MODE_KEY = 'yomiage-mode';
+  var BG_SR = 24000;
+  var player = $('player');
+  var bg = { worker: null, readyPromise: null, ready: false, reqId: 0, pending: {}, token: 0, queue: [], cur: null,
+             genBusy: false, genPos: null, waiting: false, selfPause: false, lastT: -1, stallSince: 0, timer: null, failures: 0 };
+  state.mode = (function () { try { return localStorage.getItem(MODE_KEY) || 'bg'; } catch (e) { return 'bg'; } })();
+  if (!player || typeof Worker === 'undefined' || typeof DecompressionStream === 'undefined') state.mode = 'speech';
+  function isBg() { return state.mode === 'bg'; }
+
+  function bgWorker() {
+    if (bg.worker) return bg.worker;
+    bg.worker = new Worker(LIB.ttsWorker || './vendor/ojt1/tts-worker.js', { type: 'module' });
+    bg.worker.onmessage = function (ev) {
+      var m = ev.data || {};
+      if (m.type === 'progress') { if (bg.onProgress) bg.onProgress(m.got, m.total); return; }
+      var cb = bg.pending[m.id];
+      if (!cb) return;
+      delete bg.pending[m.id];
+      if (m.type === 'error') cb.reject(new Error(m.error)); else cb.resolve(m);
+    };
+    bg.worker.onerror = function (ev) {
+      var err = new Error((ev && ev.message) || 'voice worker failed');
+      Object.keys(bg.pending).forEach(function (k) { bg.pending[k].reject(err); });
+      bg.pending = {};
+      try { bg.worker.terminate(); } catch (e) {}
+      bg.worker = null; bg.readyPromise = null; bg.ready = false;
+    };
+    return bg.worker;
+  }
+  function bgCall(msg) {
+    var w = bgWorker();
+    var id = ++bg.reqId;
+    msg.id = id;
+    return new Promise(function (resolve, reject) {
+      bg.pending[id] = { resolve: resolve, reject: reject };
+      w.postMessage(msg);
+    });
+  }
+  function bgPrepare() {
+    if (bg.readyPromise) return bg.readyPromise;
+    var noteEl = $('voice-prep');
+    bg.onProgress = function (got, total) {
+      if (bg.ready) return;
+      var pct = Math.min(100, Math.round(got / total * 100));
+      noteEl.hidden = false;
+      noteEl.textContent = '声のデータを準備しています… ' + pct + '%（初回だけ約25MB。Wi-Fiがおすすめです。2回目からはすぐ始まります）';
+    };
+    bg.readyPromise = bgCall({ type: 'init' }).then(function () {
+      bg.ready = true;
+      noteEl.hidden = true;
+      askPersist();
+      return true;
+    });
+    bg.readyPromise.catch(function () { bg.readyPromise = null; noteEl.hidden = true; });
+    return bg.readyPromise;
+  }
+
+  // The items (intro, sentences, outro) are the same as in the phone-voice mode, so positions are shared.
+  function bgNextPos(pos) {
+    var part = state.parts[pos.p];
+    if (!part) return null;
+    var list = buildUtterances(part);
+    if (pos.i < list.length) return pos;
+    if (pos.p >= state.parts.length - 1) return null;
+    return { p: pos.p + 1, i: 0 };
+  }
+  // One sound file holds several sentences (fewer switches between files); the first one is short so playback starts quickly.
+  function bgPlanSegment(pos, first) {
+    pos = bgNextPos(pos);
+    if (!pos) return null;
+    var list = buildUtterances(state.parts[pos.p]);
+    var target = first ? 50 : 650, maxItems = first ? 3 : 14;
+    var items = [], chars = 0;
+    for (var i = pos.i; i < list.length && items.length < maxItems; i++) {
+      items.push({ idx: i, item: list[i] });
+      chars += Array.from(list[i].text).length;
+      if (chars >= target) break;
+    }
+    return { p: pos.p, start: pos.i, end: pos.i + items.length - 1, items: items, chars: chars };
+  }
+  function wavBlob(pcm) {
+    var n = pcm.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    function s(o, t) { for (var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
+    s(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); s(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true); v.setUint32(24, BG_SR, true); v.setUint32(28, BG_SR * 2, true); v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, n * 2, true);
+    new Int16Array(buf, 44, n).set(pcm);
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+  async function bgRender(seg, token) {
+    var chunks = [], total = 0, marks = [];
+    for (var k = 0; k < seg.items.length; k++) {
+      var it = seg.items[k];
+      if (window.__yomiageSynthDelay) await new Promise(function (r) { setTimeout(r, window.__yomiageSynthDelay); });   // test hook: slow phone
+      var r = await bgCall({ type: 'synth', text: it.item.text });
+      if (token !== bg.token) return null;
+      var pauseSec = it.item.type === 'sentence' ? 0.25 : 0.6;
+      marks.push({ idx: it.idx, sentIndex: it.item.sentIndex, t: total / BG_SR });
+      chunks.push(r.pcm); total += r.pcm.length;
+      var gap = new Int16Array(Math.round(BG_SR * pauseSec));
+      chunks.push(gap); total += gap.length;
+    }
+    var all = new Int16Array(total), o = 0;
+    chunks.forEach(function (c) { all.set(c, o); o += c.length; });
+    seg.marks = marks;
+    seg.duration = total / BG_SR;
+    seg.url = URL.createObjectURL(wavBlob(all));
+    return seg;
+  }
+  function bgBufferedSec() {
+    return bg.queue.reduce(function (a, s) { return a + (s.duration || 0); }, 0) +
+      (bg.cur ? Math.max(0, (bg.cur.duration || 0) - (player.currentTime || 0)) : 0);
+  }
+  async function bgFill() {
+    if (bg.genBusy) return;
+    bg.genBusy = true;
+    var token = bg.token;
+    try {
+      while (token === bg.token && bg.genPos && (bg.queue.length < 2 || bgBufferedSec() < 150)) {
+        var seg = bgPlanSegment(bg.genPos, !bg.cur && !bg.queue.length);
+        if (!seg) { bg.genPos = null; break; }
+        var done = await bgRender(seg, token);
+        if (!done || token !== bg.token) break;
+        bg.genPos = { p: seg.p, i: seg.end + 1 };
+        bg.queue.push(done);
+        bg.failures = 0;
+        if (bg.waiting) bgPlayNext();
+      }
+    } catch (e) {
+      if (token === bg.token) {
+        bg.failures += 1;
+        trace('bg synth fail ' + (e && e.message));
+        if (bg.failures <= 3) setTimeout(function () { if (token === bg.token) bgFill(); }, 800);
+        else bgFatal(e);
+      }
+    } finally {
+      bg.genBusy = false;
+    }
+    if (token === bg.token && bg.genPos && !bg.genBusy && (bg.queue.length < 2 || bgBufferedSec() < 150)) setTimeout(bgFill, 50);
+  }
+  function bgFatal(e) {
+    bgStop();
+    state.phase = 'paused';
+    updateButtons();
+    setStatus('声を作れませんでした（' + ((e && e.message) || '') + '）。もう一度「再生」を押してください。直らないときは、下の「スマホの声」に切り替えてください。', true);
+  }
+  // While the next sound is still being made, play a 1-second loop of an inaudible 25 Hz hum (about -58 dBFS) so
+  // Android keeps the page awake and the lock-screen controls stay; it is replaced as soon as the speech is ready.
+  var bridgeUrl = null;
+  function bgBridge() {
+    if (!bridgeUrl) {
+      var n = BG_SR, a = new Int16Array(n);
+      for (var i = 0; i < n; i++) a[i] = Math.round(60 * Math.sin(2 * Math.PI * 25 * i / BG_SR));
+      bridgeUrl = URL.createObjectURL(wavBlob(a));
+    }
+    bgRelease(bg.cur); bg.cur = null;
+    bg.bridging = true;
+    player.loop = true;
+    if (player.src !== bridgeUrl) player.src = bridgeUrl;
+    player.playbackRate = 1;
+    var pr = player.play();
+    if (pr && pr.catch) pr.catch(function () {});
+  }
+  function bgRelease(seg) { if (seg && seg.url) { try { URL.revokeObjectURL(seg.url); } catch (e) {} seg.url = null; } }
+  function bgRate() { return window.__yomiageBgRate || state.rate || 1; }
+  function bgPlayNext() {
+    if (state.phase !== 'playing') return;
+    var seg = bg.queue.shift();
+    if (!seg) {
+      if (!bg.genPos) return finishAll();
+      bg.waiting = true;
+      setStatus('続きの声を作っています…');
+      bgBridge();
+      bgFill();
+      return;
+    }
+    bg.waiting = false;
+    bg.bridging = false;
+    player.loop = false;
+    bgRelease(bg.cur);
+    bg.cur = seg;
+    bg.lastMark = -1;
+    bg.lastT = -1; bg.stallSince = 0;
+    player.src = seg.url;
+    player.defaultPlaybackRate = bgRate();
+    player.playbackRate = bgRate();
+    var pr = player.play();
+    if (pr && pr.catch) pr.catch(function (e) {
+      if (bg.cur !== seg || state.phase !== 'playing') return;
+      trace('bg play() rejected ' + (e && e.name));
+      if (e && e.name === 'NotAllowedError') {
+        state.phase = 'paused'; updateButtons(); bgMediaState();
+        setStatus('スマホが自動の再生を止めました。「再生」を押すと続きから読みます。', true);
+      }
+    });
+    state.partIndex = seg.p;
+    state.itemIndex = seg.start;
+    bgOnTime();
+    bgMediaMeta();
+    setStatus('読み上げています。画面を消しても、ほかのアプリを開いても続きます。');
+    bgFill();
+  }
+  function bgOnTime() {
+    var seg = bg.cur;
+    if (!seg || !seg.marks) return;
+    var t = player.currentTime || 0, m = 0;
+    for (var i = 0; i < seg.marks.length; i++) if (seg.marks[i].t <= t + 0.05) m = i;
+    if (m === bg.lastMark) return;
+    bg.lastMark = m;
+    state.partIndex = seg.p;
+    state.itemIndex = seg.marks[m].idx;
+    highlight(seg.p, seg.marks[m].sentIndex);
+    updateNowPlaying();
+    savePos();
+  }
+  function bgPlayFrom(partIndex, itemIndex) {
+    bg.token += 1;
+    bg.queue.forEach(bgRelease); bg.queue = [];
+    bg.selfPause = true;
+    try { player.pause(); } catch (e) {}
+    bg.selfPause = false;
+    bgRelease(bg.cur); bg.cur = null;
+    bg.waiting = true;
+    bg.failures = 0;
+    bg.genPos = { p: partIndex, i: Math.max(0, itemIndex || 0) };
+    bgBridge();
+    bgStartTimer();
+    var token = bg.token;
+    if (!bg.ready) setStatus('声の準備をしています…');
+    bgPrepare().then(function () {
+      if (token !== bg.token || state.phase !== 'playing') return;
+      setStatus('声を作っています…');
+      bgFill();
+    }, function (e) {
+      if (token !== bg.token) return;
+      bgStop();
+      state.phase = 'paused';
+      updateButtons(); bgMediaState();
+      setStatus('声のデータを読み込めませんでした。インターネット（Wi-Fiがおすすめ）につながる所で、もう一度「再生」を押してください。それまでは下の「スマホの声」で聴けます。（' + ((e && e.message) || '') + '）', true);
+    });
+  }
+  function bgPause() {
+    bg.selfPause = true;
+    try { player.pause(); } catch (e) {}
+    bg.selfPause = false;
+    bgMediaState();
+  }
+  function bgResume() {
+    // Same file still loaded: just continue where it stopped (no gap, no re-generation).
+    if (bg.cur && bg.cur.url && !player.ended && player.src && !bg.bridging) {
+      state.phase = 'playing';
+      updateButtons();
+      var pr = player.play();
+      if (pr && pr.catch) pr.catch(function () { bgPlayFrom(state.partIndex, state.itemIndex); });
+      bgStartTimer();
+      bgMediaState();
+      setStatus('読み上げています。画面を消しても、ほかのアプリを開いても続きます。');
+      if (!bg.genBusy) bgFill();
+      return true;
+    }
+    return false;
+  }
+  function bgStop() {
+    bg.token += 1;
+    bg.waiting = false;
+    bg.genPos = null;
+    bg.selfPause = true;
+    try { player.pause(); } catch (e) {}
+    bg.selfPause = false;
+    bg.queue.forEach(bgRelease); bg.queue = [];
+    bgRelease(bg.cur); bg.cur = null;
+    bg.bridging = false;
+    player.loop = false;
+    try { player.removeAttribute('src'); player.load(); } catch (e) {}
+    bgStopTimer();
+    bgMediaState();
+  }
+  // Watchdog: if the sound stops moving while it should be playing, restart from the current sentence.
+  function bgStartTimer() {
+    bgStopTimer();
+    bg.timer = setInterval(function () {
+      if (state.phase !== 'playing' || !isBg()) return;
+      if (bg.waiting || !bg.cur || player.paused) { bg.stallSince = 0; return; }
+      var t = player.currentTime;
+      if (t !== bg.lastT) { bg.lastT = t; bg.stallSince = 0; return; }
+      if (!bg.stallSince) { bg.stallSince = Date.now(); return; }
+      if (Date.now() - bg.stallSince > 10000) {
+        trace('bg stall');
+        state.recoveries = (state.recoveries || 0) + 1;
+        showSpeechNote('音声が止まっていたので、同じ文から読み直しました（自動で立て直した回数：' + state.recoveries + '回）');
+        bgPlayFrom(state.partIndex, state.itemIndex);
+      }
+    }, 2000);
+  }
+  function bgStopTimer() { if (bg.timer) { clearInterval(bg.timer); bg.timer = null; } }
+
+  if (player) {
+    player.addEventListener('timeupdate', bgOnTime);
+    player.addEventListener('ended', function () {
+      if (!isBg() || state.phase !== 'playing' || !bg.cur) return;
+      var seg = bg.cur;
+      state.partIndex = seg.p;
+      state.itemIndex = seg.end + 1;
+      savePos();
+      bgPlayNext();
+    });
+    player.addEventListener('pause', function () {
+      // Paused by the phone (call, other app's sound, headphones unplugged, lock-screen button): follow it.
+      if (bg.selfPause || player.ended || !isBg() || state.phase !== 'playing') return;
+      state.phase = 'paused';
+      updateButtons();
+      savePos();
+      bgMediaState();
+      setStatus('一時停止しています。「再生」で同じところから続けます。');
+    });
+    player.addEventListener('play', function () {
+      if (!isBg() || state.phase === 'playing' || (!bg.cur && !bg.bridging)) return;
+      state.phase = 'playing';
+      updateButtons();
+      bgStartTimer();
+      bgMediaState();
+    });
+    player.addEventListener('error', function () {
+      if (!isBg() || state.phase !== 'playing' || !bg.cur || bg.bridging) return;
+      trace('bg media error');
+      bgPlayFrom(state.partIndex, state.itemIndex);
+    });
+  }
+
+  /* Lock-screen / notification controls (Media Session). */
+  function bgMediaMeta() {
+    if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
+    var part = state.parts[state.partIndex] || {};
+    var title = state.fileName ? state.fileName.replace(/\.(pdf|txt|md|markdown)$/i, '') : '読み上げくん';
+    try {
+      if (state.bookTitle) title = state.bookTitle;
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: title,
+        artist: 'その' + (part.index || 1) + ' / 全' + (part.total || 1) + '回',
+        album: '読み上げくん',
+        artwork: [
+          { src: new URL('./icons/icon-192.png', location.href).href, sizes: '192x192', type: 'image/png' },
+          { src: new URL('./icons/icon-512.png', location.href).href, sizes: '512x512', type: 'image/png' }
+        ]
+      });
+    } catch (e) {}
+    bgMediaState();
+  }
+  function bgMediaState() {
+    if (!('mediaSession' in navigator)) return;
+    try { navigator.mediaSession.playbackState = state.phase === 'playing' ? 'playing' : (bg.cur ? 'paused' : 'none'); } catch (e) {}
+  }
+  function bgMediaHandlers() {
+    if (!('mediaSession' in navigator)) return;
+    var set = function (a, fn) { try { navigator.mediaSession.setActionHandler(a, fn); } catch (e) {} };
+    set('play', function () { if (state.phase === 'paused') resumeSpeech(); else if (state.phase === 'idle') startPlay(true); });
+    set('pause', function () { pauseSpeech(); });
+    set('stop', function () { stopSpeech(false); });
+    set('previoustrack', function () { speakFrom(state.partIndex, Math.max(0, state.itemIndex - 1)); });
+    set('nexttrack', function () { speakFrom(state.partIndex, state.itemIndex + 1); });
+    set('seekbackward', null);
+    set('seekforward', null);
+    set('seekto', null);
+  }
+  bgMediaHandlers();
+
   async function startPlay(fromSaved) {
     if (!state.parts.length) return;
     if (state.phase === 'paused' && !fromSaved) {
       resumeSpeech();
       return;
     }
-    var voice = await waitForVoices();
     var warn = $('voice-warn');
+    if (isBg()) {
+      warn.hidden = true;
+      var p0 = 0, i0 = 0;
+      if (fromSaved && state.saved && !state.saved.finished) { p0 = state.saved.partIndex || 0; i0 = state.saved.itemIndex || 0; }
+      state.finished = false;
+      state.recoveries = 0;
+      showSpeechNote('');
+      speakFrom(Math.min(p0, state.parts.length - 1), i0);
+      return;
+    }
+    var voice = await waitForVoices();
     var voices = [];
     try { voices = tts.getVoices() || []; } catch (e) {}
     if (!voice && voices.length) {
@@ -1749,6 +2191,7 @@ window.YOMIAGE_LIB = {
       try { stopSpeech(false); } catch (e0) {}
       state.currentFileKey = '';   // never overwrite the previous book's position
       state.bookId = null;
+      state.bookTitle = '';
       state.partIndex = 0;
       state.itemIndex = 0;
       highlight(-1, -1);
@@ -1789,14 +2232,35 @@ window.YOMIAGE_LIB = {
         setProgress(1, 1);
       } else {
         var vertical = !!chkVertical.checked;
-        var result = await extractPdf(file, vertical, function (i, n, kind) {
+        var jobKey = (fileHash || (name + ':' + (file.size || 0))) + (vertical ? ':v' : ':h');
+        var job = await ocrJobGet(jobKey);
+        if (job && job.pages && job.pages.length) {
+          setStatus('前回の文字起こしの続きから再開します（' + job.pages.length + 'ページまで終わっています）。');
+        }
+        state.ocrBusy = true;
+        requestWakeLock();
+        var result;
+        try {
+        result = await extractPdf(file, vertical, function (i, n, kind) {
           setProgress(i - 0.2, n);
           if (kind === 'ocr' || kind === 'ocr-prep') {
-            setStatus(i + '/' + n + 'ページ 文字起こし中（画像から読み取ります。1ページあたり少し時間がかかることがあります）');
+            setStatus(i + '/' + n + 'ページ 文字起こし中' + (job && job.pages && job.pages.length ? '（前回の続きから再開しました）' : '') + '（画像から読み取ります。終わるまでこの画面を開いておいてください。途中で閉じても、同じファイルを選び直せば続きから再開します）');
           } else {
             setStatus(i + '/' + n + 'ページ 文字起こし中');
           }
+        }, {
+          pages: job && job.pages,
+          onPage: function (pagesSoFar, n) {
+            // Save after every page: if the phone closes the app, choosing the same file again continues from here.
+            if (n < 3) return;
+            return ocrJobPut({ key: jobKey, pages: pagesSoFar.slice(), n: n, ts: Date.now() });
+          }
         });
+        } finally {
+          state.ocrBusy = false;
+          if (state.phase !== 'playing' || isBg()) releaseWakeLock();
+        }
+        ocrJobDelete(jobKey);
         pages = result.pages;
         if (result.usedOcr) {
           var empty = pages.filter(function (p) { return !p.text; }).length;
@@ -1824,7 +2288,7 @@ window.YOMIAGE_LIB = {
     if (dbPromise) return dbPromise;
     dbPromise = new Promise(function (resolve, reject) {
       if (!('indexedDB' in window)) return reject(new Error('no-idb'));
-      var req = indexedDB.open(DB_NAME, 1);
+      var req = indexedDB.open(DB_NAME, 2);
       req.onupgradeneeded = function () {
         var db = req.result;
         if (!db.objectStoreNames.contains('books')) {
@@ -1832,6 +2296,7 @@ window.YOMIAGE_LIB = {
           b.createIndex('hash', 'hash', { unique: false });
         }
         if (!db.objectStoreNames.contains('texts')) db.createObjectStore('texts', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('ocrjobs')) db.createObjectStore('ocrjobs', { keyPath: 'key' });
       };
       req.onsuccess = function () { resolve(req.result); };
       req.onerror = function () { reject(req.error); };
@@ -1850,6 +2315,19 @@ window.YOMIAGE_LIB = {
         out = fn(tx);
       });
     });
+  }
+  // Unfinished OCR (saved page by page on the phone) so a closed app can continue where it stopped.
+  function ocrJobGet(key) {
+    var out = null;
+    return idb(['ocrjobs'], 'readonly', function (tx) {
+      reqP(tx.objectStore('ocrjobs').get(key)).then(function (r) { out = r || null; });
+    }).then(function () { return out; }).catch(function () { return null; });
+  }
+  function ocrJobPut(rec) {
+    return idb(['ocrjobs'], 'readwrite', function (tx) { tx.objectStore('ocrjobs').put(rec); }).catch(function () {});
+  }
+  function ocrJobDelete(key) {
+    return idb(['ocrjobs'], 'readwrite', function (tx) { tx.objectStore('ocrjobs').delete(key); }).catch(function () {});
   }
   function reqP(r) { return new Promise(function (res, rej) { r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); }
   function shelfAll() {
@@ -1927,6 +2405,7 @@ window.YOMIAGE_LIB = {
         tx.objectStore('texts').put({ id: id, pages: state.pages });
       });
       state.bookId = id;
+      state.bookTitle = title;
       askPersist();
       setStatus(statusEl.textContent + '　本棚に保存しました。次からは選び直さなくても、本棚から続きを聴けます。');
     } catch (e) {
@@ -1973,6 +2452,7 @@ window.YOMIAGE_LIB = {
     state.currentFileKey = '';
     applyPages(rec.pages, rec.name, rec.size);
     state.bookId = rec.id;
+    state.bookTitle = rec.title || '';
     var ls = state.saved;
     if (rec.pos && (!ls || (rec.pos.ts || 0) >= (ls.ts || 0))) state.saved = rec.pos;
     state.finished = !!(state.saved && state.saved.finished);
@@ -2196,21 +2676,59 @@ window.YOMIAGE_LIB = {
   speedInput.addEventListener('input', function () {
     state.rate = parseFloat(speedInput.value) || 1;
     speedLabel.textContent = state.rate.toFixed(1);
+    if (player) { try { player.defaultPlaybackRate = state.rate; player.playbackRate = state.rate; } catch (e) {} }
     savePos();
   });
 
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible') {
-      if (state.phase === 'playing') {
+      if (state.ocrBusy) requestWakeLock();
+      if (state.phase === 'playing' && !isBg()) {
         requestWakeLock();
         // If speech died while hidden, the watchdog recovers it; make sure one is running.
-        if (state.cur && !state.cur.done && !state.watchdog) startWatchdog(state.cur);
+        if (!isBg() && state.cur && !state.cur.done && !state.watchdog) startWatchdog(state.cur);
       }
     } else if (state.phase === 'playing') {
       // Screen off / app switch: speech often dies on Android. Keep position.
       savePos();
     }
   });
+
+  /* ---------- mode switch ---------- */
+  function renderMode() {
+    $('mode-bg').checked = isBg();
+    $('mode-speech').checked = !isBg();
+    $('mode-opt-bg').classList.toggle('on', isBg());
+    $('mode-opt-speech').classList.toggle('on', !isBg());
+    $('mode-notice').textContent = isBg()
+      ? '画面を消しても、ほかのアプリを開いても読み上げが続きます。途中で止まるときは、スマホの「設定」→「アプリ」→「Chrome」→「アプリのバッテリー使用量」を「制限なし」にしてください。'
+      : '読み上げ中に画面が消えると、途中で止まります。画面をつけたままにするか、上の「画面を消しても聴ける声」を選んでください。';
+  }
+  function setMode(m) {
+    if (m === state.mode) return;
+    var wasPlaying = state.phase === 'playing' || state.phase === 'paused';
+    if (wasPlaying) stopSpeech(false);
+    state.mode = m;
+    try { localStorage.setItem(MODE_KEY, m); } catch (e) {}
+    renderMode();
+    if (m === 'bg') {
+      bgPrepare().then(function () {
+        setStatus('「画面を消しても聴ける声」の準備ができました。「再生」を押してください。');
+      }, function () {
+        setStatus('声のデータを読み込めませんでした。インターネット（Wi-Fiがおすすめ）につながる所で、もう一度選び直してください。', true);
+      });
+    } else {
+      setStatus('「スマホの声」にしました。読み上げ中は画面をつけたままにしてください。');
+    }
+    if (wasPlaying) updateButtons();
+  }
+  $('mode-bg').addEventListener('change', function () { if (this.checked) setMode('bg'); });
+  $('mode-speech').addEventListener('change', function () { if (this.checked) setMode('speech'); });
+  if (!player || typeof Worker === 'undefined' || typeof DecompressionStream === 'undefined') {
+    $('mode-bg').disabled = true;
+    $('mode-opt-bg').style.opacity = '.5';
+  }
+  renderMode();
 
   if (/mockspeech=1/.test(location.search || '')) {
     installMockSpeech();
@@ -2259,6 +2777,11 @@ window.YOMIAGE_LIB = {
       });
     },
     installMockSpeech: installMockSpeech,
+    bg: bg,
+    bgPrepare: bgPrepare,
+    bgCall: bgCall,
+    setMode: setMode,
+    player: player,
     tts: tts,
     LIB: LIB,
     ensurePaddle: ensurePaddle,

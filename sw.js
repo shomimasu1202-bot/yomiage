@@ -1,5 +1,11 @@
 /* 読み上げくん service worker: caches app files on this origin only. */
-const CACHE = 'yomiage-v5';
+const CACHE = 'yomiage-v6';
+// Big, never-changing data (voice, dictionary, OCR models) lives in its own cache so an app update does not
+// download it again. A new version of such data must use a new folder name (e.g. vendor/ojt2/).
+const ASSETS = 'yomiage-assets-1';
+function isAsset(path) {
+  return /\/vendor\/(ojt\d+|models|ort|tessdata)\//.test(path) || /\/vendor\/(paddleocr\.mjs|tesseract-core-simd-lstm\.wasm\.js)$/.test(path);
+}
 const CORE = [
   './',
   './index.html',
@@ -29,7 +35,7 @@ self.addEventListener('install', function (event) {
 self.addEventListener('activate', function (event) {
   event.waitUntil(
     caches.keys().then(function (keys) {
-      var old = keys.filter(function (k) { return k !== CACHE; });
+      var old = keys.filter(function (k) { return k !== CACHE && k !== ASSETS; });
       return Promise.all(old.map(function (k) {
         return caches.delete(k);
       })).then(function () { return old.length > 0; });
@@ -73,13 +79,14 @@ self.addEventListener('fetch', function (event) {
     return;
   }
 
+  var target = isAsset(url.pathname) ? ASSETS : CACHE;
   event.respondWith(
     caches.match(event.request).then(function (cached) {
       if (cached) return cached;
       return fetch(event.request).then(function (res) {
-        if (res && res.ok) {
+        if (res && res.ok && res.status === 200) {
           var copy = res.clone();
-          caches.open(CACHE).then(function (c) { c.put(event.request, copy); });
+          caches.open(target).then(function (c) { return c.put(event.request, copy); }).catch(function () {});
         }
         return res;
       });
